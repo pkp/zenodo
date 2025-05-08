@@ -61,9 +61,6 @@
 					{fbvFormArea id="submissionsXmlForm"}
 						{capture assign=submissionsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.submissions.ExportPublishedSubmissionsListGridHandler" op="fetchGrid" plugin="zenodo" category="importexport" escape=false}{/capture}
 						{load_url_in_div id="submissionsListGridContainer" url=$submissionsListGridUrl}
-{*						{fbvFormSection list="true"}*}
-{*							{fbvElement type="checkbox" id="validation" label="plugins.importexport.common.validation" checked=$validation|default:false}*}
-{*						{/fbvFormSection}*}
 						{if !empty($actionNames)}
 							{fbvFormSection}
 							<ul class="export_actions">

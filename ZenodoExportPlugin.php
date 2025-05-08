@@ -211,7 +211,17 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             }
             // redirect back to the right tab
             $request->redirect(null, null, null, $path, null, $tab);
-        } else {
+        } elseif ($request->getUserVar(PubObjectsExportPlugin::EXPORT_ACTION_EXPORT)) {
+            assert($filter != null);
+            // Set filter for JSON
+            $filter = 'article=>zenodo-json';
+            foreach ($objects as $object) { // @todo fix output formatting when multiple articles are selected
+                // Get the JSON
+                $exportJson = $this->exportJSON($object, $filter, $context);
+                header('Content-Type: application/json');
+                echo $exportJson;
+            }
+        } else { // @todo remove?
             parent::executeExportAction($request, $objects, $filter, $tab, $objectsFileNamePart, $noValidation);
         }
     }

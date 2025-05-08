@@ -21,9 +21,6 @@ use PKP\plugins\Plugin;
 
 class ZenodoSettingsForm extends Form
 {
-    //
-    // Private properties
-    //
     public int $contextId;
     public Plugin $plugin;
 
@@ -43,9 +40,6 @@ class ZenodoSettingsForm extends Form
         return $this->plugin;
     }
 
-    //
-    // Constructor
-    //
     /**
      * Constructor
      *
@@ -116,7 +110,7 @@ class ZenodoSettingsForm extends Form
             'automaticRegistration' => 'bool',
             'testMode' => 'bool',
             'mintDOI' => 'bool', // @TODO proper implementation
-            //'community' => 'string' // @TODO for submitting all articles to a zenodo community
+            'community' => 'string' // @TODO for submitting all articles to a zenodo community
         ];
     }
 
@@ -125,6 +119,6 @@ class ZenodoSettingsForm extends Form
      */
     public function isOptional(string $settingName): bool
     {
-        return in_array($settingName, ['apiKey', 'automaticRegistration', 'testMode', 'mintDOI']);
+        return in_array($settingName, ['apiKey', 'automaticRegistration', 'testMode', 'mintDOI', 'community']);
     }
 }

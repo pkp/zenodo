@@ -17,7 +17,7 @@
 			symbolic="article=>zenodo-json"
 			displayName="plugins.importexport.zenodo.displayName"
 			description="plugins.importexport.zenodo.description"
-			inputType="class::classes.submission.Submission[]"
+			inputType="class::classes.submission.Submission"
 			outputType="primitive::string" />
 	</filterGroups>
 	<filters>

@@ -23,14 +23,10 @@ msgstr "Create a Zenodo account."
 msgid "plugins.importexport.zenodo.registrationIntro"
 msgstr ""
 "If you would like to register articles from within OJS, please enter your "
-"Zenodo API Key. Else, you'll still be able to export into the Zenodo XML format "
-"but you cannot register your articles with Zenodo from within OJS."
+"Zenodo API Key. You will find your API key on your Zenodo account's \"Applications\" page."
 
 msgid "plugins.importexport.zenodo.settings.form.apiKey"
 msgstr "Zenodo API Key"
-
-msgid "plugins.importexport.zenodo.settings.form.apiKey.description"
-msgstr "You will find your API key on your Zenodo account's \"Applications\" page."
 
 msgid ""
 "plugins.importexport.zenodo.settings.form.automaticRegistration.description"
@@ -38,6 +34,12 @@ msgstr ""
 "OJS will deposit articles automatically to Zenodo. Please note that this may "
 "take a short amount of time after publication to process (e.g. depending on "
 "your cronjob configuration). You can check for all unregistered articles."
+
+msgid "plugins.importexport.zenodo.settings.form.community"
+msgstr "Zenodo Community"
+
+msgid "plugins.importexport.zenodo.settings.form.community.description"
+msgstr "(Optional) Enter the Zenodo community to submit articles to."
 
 msgid "plugins.importexport.zenodo.settings.form.doi.description"
 msgstr "Mint a DOI with Zenodo. WARNING - do not enable if you are already minting DOIs in OJS."

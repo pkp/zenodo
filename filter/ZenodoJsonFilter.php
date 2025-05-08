@@ -55,11 +55,11 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
     /**
      * @see Filter::process()
      *
-     * @param Submission $pubObjects
+     * @param Submission $pubObject
      *
      * @return string JSON
      */
-    public function &process(&$pubObjects)
+    public function &process(&$pubObject)
     {
         /** @var ZenodoExportDeployment $deployment */
         $deployment = $this->getDeployment();
@@ -67,6 +67,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
         $cache = $plugin->getCache();
+
+        $mintDoi = $plugin->getSetting($context->getId(), 'mint_doi');
+        $community = $plugin->getSetting($context->getId(), 'community');
 
         $application = Application::get();
         error_log(print_r($application, true));
@@ -80,7 +83,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         // https://github.com/zenodo/zenodo/blob/master/zenodo/modules/deposit/jsonschemas/deposits/records/legacyrecord.json
         //$data[] = null;
 
-        $publication = $pubObjects->getCurrentPublication();
+        $publication = $pubObject->getCurrentPublication();
         $publicationLocale = $publication->getData('locale');
 
         $issueId = $publication->getData('issueId');
@@ -127,9 +130,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         $article['metadata']['identifier'] = [];
 
         // DOI
-        $doi = $publication->getDoi();
-        if (!empty($doi)) {
-            $article['metadata']['identifier'][] = ['type' => 'doi', 'id' => $doi];
+        if (!$mintDoi) {
+            $doi = $publication->getDoi();
+            if (!empty($doi)) {
+                $article['metadata']['identifier'][] = ['type' => 'doi', 'id' => $doi];
+            } else {
+                error_log('Warning: DOI is empty');
+                // minting new DOI in Zenodo
+            }
         }
 
         // Identification Numbers
