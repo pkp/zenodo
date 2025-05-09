@@ -18,17 +18,18 @@ namespace APP\plugins\importexport\zenodo\filter;
 
 use APP\core\Application;
 use APP\facades\Repo;
+use APP\issue\Issue;
 use APP\plugins\importexport\zenodo\ZenodoExportDeployment;
 use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
 use APP\submission\Submission;
+use Carbon\Carbon;
+use Exception;
 use PKP\controlledVocab\ControlledVocab;
 use PKP\core\PKPString;
 use PKP\filter\FilterGroup;
-use PKP\filter\PersistableFilter;
-use PKP\plugins\importexport\native\filter\NativeExportFilter;
 use PKP\plugins\importexport\PKPImportExportFilter;
 
-class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // NativeExportFilter
+class ZenodoJsonFilter extends PKPImportExportFilter
 {
     /**
      * Constructor
@@ -53,11 +54,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
     // Implement template methods from Filter
     //
     /**
-     * @see Filter::process()
-     *
      * @param Submission $pubObject
      *
      * @return string JSON
+     * @throws Exception
+     * @see Filter::process()
+     *
      */
     public function &process(&$pubObject)
     {
@@ -68,27 +70,16 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         $plugin = $deployment->getPlugin();
         $cache = $plugin->getCache();
 
-        $mintDoi = $plugin->getSetting($context->getId(), 'mint_doi');
-        $community = $plugin->getSetting($context->getId(), 'community');
-
-        $application = Application::get();
-        error_log(print_r($application, true));
-
-        // see https://developers.zenodo.org/#representation
-        $uploadType = 'publication';
-        $publicationType = 'article'; // or book, preprint
-
         // Create the JSON string
         // https://developers.zenodo.org/#depositions
         // https://github.com/zenodo/zenodo/blob/master/zenodo/modules/deposit/jsonschemas/deposits/records/legacyrecord.json
-        //$data[] = null;
 
         $publication = $pubObject->getCurrentPublication();
         $publicationLocale = $publication->getData('locale');
 
         $issueId = $publication->getData('issueId');
         if ($cache->isCached('issues', $issueId)) {
-            $issue = $cache->get('issues', $issueId);
+            $issue = $cache->get('issues', $issueId); /** @var Issue $issue */
         } else {
             $issue = Repo::issue()->get($issueId);
             $issue = $issue->getJournalId() == $context->getId() ? $issue : null;
@@ -99,116 +90,42 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
 
         $article = [];
         $article['metadata'] = [];
-        // Publisher name (i.e. institution name)
-        $publisher = $context->getData('publisherInstitution');
-        if (!empty($publisher)) {
-            $article['metadata']['publisher'] = $publisher;
-        }
 
-        // Journal's title (M)
-        $journalTitle = $context->getName($context->getPrimaryLocale());
-        $article['metadata']['journal_title'] = $journalTitle;
+        // see https://developers.zenodo.org/#representation
 
         // Upload and publication type
+        $uploadType = 'publication';
         $article['metadata']['upload_type'] = $uploadType;
+
+        $publicationType = 'article'; // or book, preprint
         $article['metadata']['publication_type'] = $publicationType;
 
-        // Volume, Number
-        $volume = $issue->getVolume();
-        if (!empty($volume)) {
-            $article['metadata']['journal_volume'] = $volume;
+        // Year and month from the article's publication date
+        // publication_date in YYYY-MM-DD @todo Carbon?
+        $publicationDate = Carbon::parse($issue->getDatePublished());
+        if ($publication->getData('datePublished')) {
+            $publicationDate = Carbon::parse($publication->getData('datePublished'));
         }
-        $issueNumber = $issue->getNumber();
-        if (!empty($issueNumber)) {
-            $article['metadata']['number'] = $issueNumber;
-        }
+        $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
 
         // Article title
         $article['metadata']['title'] = $publication?->getLocalizedTitle($publicationLocale) ?? '';
 
-        // Identifiers
-        $article['metadata']['identifier'] = [];
-
-        // DOI
-        if (!$mintDoi) {
-            $doi = $publication->getDoi();
-            if (!empty($doi)) {
-                $article['metadata']['identifier'][] = ['type' => 'doi', 'id' => $doi];
-            } else {
-                error_log('Warning: DOI is empty');
-                // minting new DOI in Zenodo
-            }
-        }
-
-        // Identification Numbers
-        $issns = [];
-        $pissn = $context->getData('printIssn');
-        if (!empty($pissn)) {
-            $issns[] = $pissn;
-        }
-        $eissn = $context->getData('onlineIssn');
-        if (!empty($eissn)) {
-            $issns[] = $eissn;
-        }
-        if (!empty($issns)) {
-            $article['metadata']['issns'] = $issns;
-        }
-
-        // Print and online ISSN
-        if (!empty($pissn)) {
-            $article['metadata']['identifier'][] = ['type' => 'pissn', 'id' => $pissn];
-        }
-        if (!empty($eissn)) {
-            $article['metadata']['identifier'][] = ['type' => 'eissn', 'id' => $eissn];
-        }
-
-        // Year and month from the article's publication date
-
-
-        // publication_date in YYYY-MM-DD @todo Carbon?
-        $publicationDate = $this->formatDate($issue->getDatePublished());
-        if ($publication->getData('datePublished')) {
-            $publicationDate = $this->formatDate($publication->getData('datePublished'));
-        }
-        $yearMonth = explode('-', $publicationDate);
-        $article['metadata']['year'] = $yearMonth[0];
-        $article['metadata']['month'] = $yearMonth[1];
-        $article['metadata']['publication_date'] = $publicationDate;
-        /** --- FirstPage / LastPage (from PubMed plugin)---
-         * there is some ambiguity for online journals as to what
-         * "page numbers" are; for example, some journals (eg. JMIR)
-         * use the "e-location ID" as the "page numbers" in PubMed
-         */
-        //            $startPage = $publication->getStartingPage();
-        //            $endPage = $publication->getEndingPage();
-        //            if (isset($startPage) && $startPage !== '') {
-        //                $article['metadata']['start_page'] = $startPage;
-        //                $article['metadata']['end_page'] = $endPage;
-        //            }
-        // FullText URL
-        //            $request = Application::get()->getRequest();
-        //            $article['metadata']['link'] = [];
-        //            $article['metadata']['link'][] = [
-        //                'url' => $request->getDispatcher()->url($request, Application::ROUTE_PAGE, $context->getPath(), 'article', 'view', [$pubObject->getId()], urlLocaleForPage: ''),
-        //                'type' => 'fulltext',
-        //                'content_type' => 'html'
-        //            ];
-
         // Authors: name, affiliation and ORCID
         $articleAuthors = $publication->getData('authors');
         if ($articleAuthors->isNotEmpty()) {
-            $article['metadata']['author'] = [];
+            $article['metadata']['creators'] = [];
 
             foreach ($articleAuthors as $articleAuthor) {
                 $author = ['name' => $articleAuthor->getFullName(false, false, $publicationLocale)];
                 $affiliations = $articleAuthor->getLocalizedAffiliationNamesAsString($publicationLocale);
                 if (!empty($affiliations)) {
-                    $author['affiliations'] = $affiliations;
+                    $author['affiliation'] = $affiliations;
                 }
                 if ($articleAuthor->getData('orcid') && $articleAuthor->getData('orcidIsVerified')) {
-                    $author['orcid_id'] = $articleAuthor->getData('orcid');
+                    $author['orcid'] = $articleAuthor->getData('orcid');
                 }
-                $article['metadata']['author'][] = $author;
+                $article['metadata']['creators'][] = $author;
             }
         }
 
@@ -216,6 +133,34 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         $abstract = $publication->getData('abstract', $publicationLocale);
         if (!empty($abstract)) {
             $article['metadata']['description'] = PKPString::html2text($abstract);
+        }
+
+        // @todo
+        // options: open, embargoed, restricted, closed
+        // $article['metadata']['access_right'] = 'open';
+
+        // @todo if access_right = open or embargoed
+        // options: https://developers.zenodo.org/#licenses
+        // $article['metadata']['license'] = 'cc-by'
+
+        // @todo if access_right = embargoed
+        // $article['metadata']['embargo_date'] = 'cc-by'
+
+        // @todo if access_right = restricted (may not be applicable for this plugin)
+        // free text string
+        // $article['metadata']['access_conditions'] = '';
+
+        // DOI
+        // @todo option to pre-reserve DOI, probably not needed for this use case of already published materials?
+        $mintDoi = $plugin->getSetting($context->getId(), 'mint_doi');
+        if (!$mintDoi) {
+            $doi = $publication->getDoi();
+            if (!empty($doi)) {
+                $article['metadata']['doi'] = $doi;
+            } else {
+                error_log('Warning: DOI is empty');
+                // minting new DOI in Zenodo - end execution?
+            }
         }
 
         // Keywords
@@ -231,7 +176,96 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
             $article['metadata']['keywords'] = $allowedNoOfKeywords;
         }
 
+        // @todo
+        // array of objects
+        //$article['metadata']['related_identifiers'] = [];
+
+        // Contributors
+        // @todo check if needed - most roles not applicable in this context
+        // array of objects
+        // type: Contributor type. Controlled vocabulary (ContactPerson, DataCollector, DataCurator, DataManager,
+        // Distributor, Editor, HostingInstitution, Producer, ProjectLeader, ProjectManager, ProjectMember,
+        // RegistrationAgency, RegistrationAuthority, RelatedPerson, Researcher, ResearchGroup, RightsHolder,
+        // Supervisor, Sponsor, WorkPackageLeader, Other)
+        // $article['metadata']['contributors'] = [];
+
+        // References
+        // @todo once separated citations are in place
+        // array of strings
+        // Example: ["Doe J (2014). Title. Publisher. DOI", "Smith J (2014). Title. Publisher. DOI"]
+        // $article['metadata']['references'] = [];
+
+        // Zenodo community
+        // causing 500 error in sandbox api
+//        $community = $plugin->getSetting($context->getId(), 'community');
+//        if ($community) {
+//            $article['metadata']['communities'] = $community;
+//        }
+
         // @todo later funding metadata
+        // array of objects
+        // only some funders are supported by Zenodo (based on DOI prefix) - see docs for list
+        // $supportedFunders = [];
+        // $article['metadata']['grants'] = [];
+
+        // Journal title
+        $journalTitle = $context->getName($context->getPrimaryLocale());
+        $article['metadata']['journal_title'] = $journalTitle;
+
+        // Volume, Number
+        $volume = $issue->getVolume();
+        error_log(print_r($volume, true));
+        if (!empty($volume)) {
+            $article['metadata']['journal_volume'] = (string)$volume;
+        }
+
+        $issueNumber = $issue->getNumber();
+        if (!empty($issueNumber)) {
+            $article['metadata']['journal_issue'] = $issueNumber; //@todo check if this is the correct field
+        }
+
+        // Pages
+        $startPage = $publication->getStartingPage();
+        $endPage = $publication->getEndingPage();
+        if (isset($startPage) && $startPage !== '') {
+            $article['metadata']['journal_pages'] = $startPage . '-' . $endPage;
+        }
+
+        // @todo conference metadata?
+
+        // Publisher name
+        $publisher = $context->getData('publisherInstitution');
+        if (!empty($publisher)) {
+            $article['metadata']['imprint_publisher'] = $publisher; //
+        }
+
+        // @todo subjects only with a proper controlled vocabulary
+        // array of objects
+        // Specify subjects from a taxonomy or controlled vocabulary. Each term must be uniquely identified (e.g. a URL). For free form text, use the keywords field. Each array element is an object with the attributes:
+        //* term: Term from taxonomy or controlled vocabulary.
+        //* identifier: Unique identifier for term.
+        //* scheme: Persistent identifier scheme for id (automatically detected).
+        //
+        // Example: [{"term": "Astronomy", "identifier": "http://id.loc.gov/authorities/subjects/sh85009003", "scheme": "url"}]
+
+        // @todo Version
+        // $article['metadata']['version'] = '';
+
+        // @todo language
+        // Specify the main language of the record as ISO 639-2 or 639-3 code, see Library of Congress ISO 639 codes list.
+        // Example: eng
+        // $article['metadata']['language'] = '';
+
+        // @todo method not applicable?
+
+        //        // FullText URL
+        //        $request = Application::get()->getRequest();
+        //        $article['metadata']['link'] = [];
+        //        $article['metadata']['link'][] = [
+        //            'url' => $request->getDispatcher()->url($request, Application::ROUTE_PAGE, $context->getPath(), 'article', 'view', [$pubObject->getId()], urlLocaleForPage: ''),
+        //            'type' => 'fulltext',
+        //            'content_type' => 'html'
+        //        ];
 
         // @todo remove later
         $prettyJson = json_encode($article, JSON_PRETTY_PRINT);
@@ -241,14 +275,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter //PersistableFilter // // N
         return $json;
     }
 
-    /**
-     * Format a date to Y-M-D format.
-     */
-    public function formatDate(string $date): ?string
+    public function uploadFiles()
     {
-        if ($date == '') {
-            return null;
-        }
-        return date('Y-M-D', strtotime($date));
+        // @todo
     }
 }
