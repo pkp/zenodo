@@ -27,6 +27,7 @@ use Exception;
 use PKP\controlledVocab\ControlledVocab;
 use PKP\core\PKPString;
 use PKP\filter\FilterGroup;
+use PKP\i18n\LocaleConversion;
 use PKP\plugins\importexport\PKPImportExportFilter;
 
 class ZenodoJsonFilter extends PKPImportExportFilter
@@ -181,7 +182,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //$article['metadata']['related_identifiers'] = [];
 
         // Contributors
-        // @todo check if needed - most roles not applicable in this context
+        // @todo check if needed - most roles not applicable to publications context
         // array of objects
         // type: Contributor type. Controlled vocabulary (ContactPerson, DataCollector, DataCurator, DataManager,
         // Distributor, Editor, HostingInstitution, Producer, ProjectLeader, ProjectManager, ProjectMember,
@@ -190,17 +191,18 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // $article['metadata']['contributors'] = [];
 
         // References
-        // @todo once separated citations are in place
+        // @todo once structured citations are in place
+        // This will also become part of related works (using "Cites" relation)
         // array of strings
         // Example: ["Doe J (2014). Title. Publisher. DOI", "Smith J (2014). Title. Publisher. DOI"]
         // $article['metadata']['references'] = [];
 
         // Zenodo community
-        // causing 500 error in sandbox api
-//        $community = $plugin->getSetting($context->getId(), 'community');
-//        if ($community) {
-//            $article['metadata']['communities'] = $community;
-//        }
+        // causes 500 error in sandbox API
+        // $community = $plugin->getSetting($context->getId(), 'community');
+        // if ($community) {
+        //     $article['metadata']['communities'] = $community;
+        // }
 
         // @todo later funding metadata
         // array of objects
@@ -214,7 +216,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Volume, Number
         $volume = $issue->getVolume();
-        error_log(print_r($volume, true));
         if (!empty($volume)) {
             $article['metadata']['journal_volume'] = (string)$volume;
         }
@@ -248,15 +249,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //
         // Example: [{"term": "Astronomy", "identifier": "http://id.loc.gov/authorities/subjects/sh85009003", "scheme": "url"}]
 
-        // @todo Version
-        // $article['metadata']['version'] = '';
+        // Publication version
+        $version = $publication->getData('version');
+        if ($version) {
+            $article['metadata']['version'] = (string)$version;
+        }
 
-        // @todo language
-        // Specify the main language of the record as ISO 639-2 or 639-3 code, see Library of Congress ISO 639 codes list.
-        // Example: eng
-        // $article['metadata']['language'] = '';
-
-        // @todo method not applicable?
+        // Language (ISO 639-2 or 639-3)
+        $language = LocaleConversion::get3LetterFrom2LetterIsoLanguage($publicationLocale);
+        if ($language) {
+            $article['metadata']['language'] = $language;
+        }
 
         //        // FullText URL
         //        $request = Application::get()->getRequest();
