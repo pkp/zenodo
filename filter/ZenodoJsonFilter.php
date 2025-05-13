@@ -19,6 +19,7 @@ namespace APP\plugins\importexport\zenodo\filter;
 use APP\core\Application;
 use APP\facades\Repo;
 use APP\issue\Issue;
+use APP\journal\Journal;
 use APP\plugins\importexport\zenodo\ZenodoExportDeployment;
 use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
 use APP\submission\Submission;
@@ -113,9 +114,11 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
 
         // Article title
+        // @todo check calls to get localized data
         $article['metadata']['title'] = $publication?->getLocalizedTitle($publicationLocale) ?? '';
 
         // Authors: name, affiliation and ORCID
+        // @todo test with orcid
         $articleAuthors = $publication->getData('authors');
         if ($articleAuthors->isNotEmpty()) {
             $article['metadata']['creators'] = [];
@@ -139,16 +142,36 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['description'] = PKPString::html2text($abstract);
         }
 
-        // @todo
+        // @todo confirm if anything fits "restricted" access in OJS
+        // Status - adapted from the DRIVER plugin
         // options: open, embargoed, restricted, closed
-        // $article['metadata']['access_right'] = 'open';
+        $status = '';
+        if ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_OPEN) {
+            $status = 'open';
+        } elseif ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION) {
+            if ($issue->getAccessStatus() == 0 || $issue->getAccessStatus() == Issue::ISSUE_ACCESS_OPEN) {
+                $status = 'open';
+            } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION) {
+                if ($publication->getData('accessStatus') == Submission::ARTICLE_ACCESS_OPEN) {
+                    $status = 'open';
+                } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() != null) {
+                    $status = 'embargoed';
+                } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() == null) {
+                    $status = 'closed';
+                }
+            }
+        }
+
+        $article['metadata']['access_right'] = $status;
 
         // @todo if access_right = open or embargoed
         // options: https://developers.zenodo.org/#licenses
         // $article['metadata']['license'] = 'cc-by'
 
-        // @todo if access_right = embargoed
-        // $article['metadata']['embargo_date'] = ''
+        if ($status == 'embargoed') {
+            $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
+            $article['metadata']['embargo_date'] = $openAccessDate->format('Y-m-d');
+        }
 
         // @todo if access_right = restricted (may not be applicable for this plugin)
         // free text string
