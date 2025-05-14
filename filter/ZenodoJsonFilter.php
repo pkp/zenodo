@@ -143,9 +143,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // @todo confirm if anything fits "restricted" access in OJS
-        // Status - adapted from the DRIVER plugin
+        // Access Rights - adapted from the DRIVER plugin
         // options: open, embargoed, restricted, closed
-        $status = '';
+        $status = ''; // @todo open as default? Zenodo API defaults to open if not sent.
         if ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_OPEN) {
             $status = 'open';
         } elseif ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION) {
@@ -164,13 +164,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         $article['metadata']['access_right'] = $status;
 
-        // @todo if access_right = open or embargoed
         // options: https://developers.zenodo.org/#licenses
-        // $article['metadata']['license'] = 'cc-by'
-
-        if ($status == 'embargoed') {
-            $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
-            $article['metadata']['embargo_date'] = $openAccessDate->format('Y-m-d');
+        // @todo should we consider other types of license URLs or just cc?
+        if ($status == 'open' || $status == 'embargoed') {
+            $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
+            if (preg_match('/creativecommons\.org\/licenses\/(.*?)\//i', $licenseUrl, $match)) {
+                $article['metadata']['license'] = 'cc-' . $match[1];
+            }
+            if ($status == 'embargoed') {
+                $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
+                $article['metadata']['embargo_date'] = $openAccessDate->format('Y-m-d');
+            }
         }
 
         // @todo if access_right = restricted (may not be applicable for this plugin)

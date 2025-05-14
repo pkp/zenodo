@@ -137,11 +137,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             'Authorization' => 'Bearer ' . $apiKey,
         ];
 
-        // @todo cleanup later
-        // Laravel HTTP client example (would be missing)
-        //$response = Http::withHeaders($headers)->withToken($apiKey)->post($url, $data);
-
-        //error_log(print_r($jsonString, true));
         try {
             $response = $httpClient->request(
                 'POST',
@@ -156,11 +151,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             error_log($e->getMessage());
             return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
         }
+
+        $responseBody = json_decode($response->getBody());
+        $zenodoRecId = $responseBody->id;
+
         if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_OK) { //@TODO check zenodo status codes
             return [['plugins.importexport.zenodo.register.error.mdsError', $status . ' - ' . $response->getBody()]];
         }
         // Deposit was received; set the status
         $objects->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
+        $objects->setData('zenodo::id', $zenodoRecId);
         $this->updateObject($objects);
         return true;
     }
@@ -241,5 +241,15 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $exportDeployment = $this->_instantiateExportDeployment($context);
         $exportFilter->setDeployment($exportDeployment);
         return $exportFilter->execute($object, true);
+    }
+
+    /**
+     * Get a list of additional setting names that should be stored with the objects.
+     *
+     * @return array
+     */
+    protected function _getObjectAdditionalSettings(): array
+    {
+        return [$this->getDepositStatusSettingName(), 'zenodo::id'];
     }
 }
