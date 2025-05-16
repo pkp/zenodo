@@ -26,8 +26,10 @@ use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use PKP\citation\CitationDAO;
 use PKP\controlledVocab\ControlledVocab;
 use PKP\core\PKPString;
+use PKP\db\DAORegistry;
 use PKP\filter\FilterGroup;
 use PKP\i18n\LocaleConversion;
 use PKP\plugins\importexport\PKPImportExportFilter;
@@ -80,6 +82,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         $submissionId = $pubObject->getId();
         $publication = $pubObject->getCurrentPublication();
+        $publicationId = $publication->getId();
         $publicationLocale = $publication->getData('locale');
 
         $issueId = $publication->getData('issueId');
@@ -105,8 +108,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $publicationType = 'article'; // or book, preprint
         $article['metadata']['publication_type'] = $publicationType;
 
-        // Year and month from the article's publication date
-        // publication_date in YYYY-MM-DD @todo Carbon?
+        // Publication date
         $publicationDate = Carbon::parse($issue->getDatePublished());
         if ($publication->getData('datePublished')) {
             $publicationDate = Carbon::parse($publication->getData('datePublished'));
@@ -118,7 +120,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata']['title'] = $publication?->getLocalizedTitle($publicationLocale) ?? '';
 
         // Authors: name, affiliation and ORCID
-        // @todo test with orcid
         $articleAuthors = $publication->getData('authors');
         if ($articleAuthors->isNotEmpty()) {
             $article['metadata']['creators'] = [];
@@ -198,7 +199,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $keywords = Repo::controlledVocab()->getBySymbolic(
             ControlledVocab::CONTROLLED_VOCAB_SUBMISSION_KEYWORD,
             Application::ASSOC_TYPE_PUBLICATION,
-            $publication->getId(),
+            $publicationId,
             [$publicationLocale]
         );
 
@@ -207,11 +208,23 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['keywords'] = $allowedNoOfKeywords;
         }
 
-        // Related identifiers - FullText URL
+        // Related identifiers
+        // @todo once structured citations are in place add related identifiers using "Cites" relation
+
+        // FullText URL
         $request = Application::get()->getRequest();
+        $url = $request->getDispatcher()->url(
+            $request,
+            Application::ROUTE_PAGE,
+            $context->getPath(),
+            'article',
+            'view',
+            [$submissionId],
+            urlLocaleForPage: ''
+        );
         $article['metadata']['related_identifiers'][] = [
             'relation' => 'isIdenticalTo',
-            'identifier' => $request->getDispatcher()->url($request, Application::ROUTE_PAGE, $context->getPath(), 'article', 'view', [$submissionId], urlLocaleForPage: ''),
+            'identifier' => $url,
             'resource_type' => 'publication',
         ];
 
@@ -225,11 +238,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // $article['metadata']['contributors'] = [];
 
         // References
-        // @todo once structured citations are in place
-        // This will also be added to related identifiers above (using "Cites" relation)
-        // array of strings
-        // Example: ["Doe J (2014). Title. Publisher. DOI", "Smith J (2014). Title. Publisher. DOI"]
-        // $article['metadata']['references'] = [];
+        $citationDao = DAORegistry::getDAO('CitationDAO'); /** @var CitationDAO $citationDao */
+        $rawCitations = $citationDao->getRawCitationsByPublicationId($publicationId)->toArray();
+        $article['metadata']['references'] = $rawCitations;
 
         // Zenodo community
         // @todo Confirm this is working on Zenodo side; consider option for multiple communities
