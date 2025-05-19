@@ -393,9 +393,4 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         return in_array($funder, $validFunders);
     }
-
-    public function uploadFiles()
-    {
-        // @todo
-    }
 }

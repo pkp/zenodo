@@ -15,14 +15,19 @@
 namespace APP\plugins\importexport\zenodo;
 
 use APP\core\Application;
+use APP\core\Services;
+use APP\facades\Repo;
 use APP\plugins\PubObjectsExportPlugin;
 use APP\submission\Submission;
 use APP\template\TemplateManager;
 use Exception;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Psr7;
+use PKP\config\Config;
 use PKP\context\Context;
 use PKP\db\DAORegistry;
 use PKP\filter\FilterDAO;
+use PKP\galley\Galley;
 use PKP\notification\Notification;
 
 define('ZENODO_API_DEPOSIT_OK', 201);
@@ -116,7 +121,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
-     * @param Submission $objects
+     * @param Submission $object
      * @param Context $context
      * @param string $jsonString Export JSON string
      *
@@ -125,7 +130,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      * @see PubObjectsExportPlugin::depositXML()
      *
      */
-    public function depositXML($objects, $context, $jsonString): bool|array /* @todo rename? */
+    public function depositXML($object, $context, $jsonString): bool|array /* @todo rename? */
     {
         $httpClient = Application::get()->getHttpClient();
         $apiKey = $this->getSetting($context->getId(), 'apiKey');
@@ -158,10 +163,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_OK) { //@TODO check zenodo status codes
             return [['plugins.importexport.zenodo.register.error.mdsError', $status . ' - ' . $response->getBody()]];
         }
+
+        // if the submission has files
+        $this->depositFiles($object, $zenodoRecId, $url, $apiKey);
+
         // Deposit was received; set the status
-        $objects->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
-        $objects->setData('zenodo::id', $zenodoRecId);
-        $this->updateObject($objects);
+        $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
+        $object->setData($this->getIdSettingName(), $zenodoRecId);
+        $this->updateObject($object);
         return true;
     }
 
@@ -244,12 +253,74 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
+     * Get Zenodo ID setting name.
+     */
+    public function getIdSettingName(): string
+    {
+        return $this->getPluginSettingsPrefix() . '::id';
+    }
+
+    /**
      * Get a list of additional setting names that should be stored with the objects.
-     *
-     * @return array
      */
     protected function _getObjectAdditionalSettings(): array
     {
-        return [$this->getDepositStatusSettingName(), 'zenodo::id'];
+        return [$this->getDepositStatusSettingName(), $this->getIdSettingName()];
+    }
+
+    /*
+     * Send files to the Zenodo API (see https://developers.zenodo.org/#deposition-files)
+     */
+    protected function depositFiles(Submission $object, int $zenodoRecId, string $url, string $apiKey): bool|array
+    {
+        $httpClient = Application::get()->getHttpClient();
+        $filesUrl = $url . '/' . $zenodoRecId . '/files';
+        $fileService = Services::get('file');
+        $filesDir = Config::getVar('files', 'files_dir');
+
+        $headers = [
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        $publication = $object->getCurrentPublication();
+        $pubLocale = $publication->getData('locale');
+
+        foreach ($publication->getData('galleys') as $galley) { /** @var Galley $galley */
+            $submissionFile = Repo::submissionFile()->get($galley->getData('submissionFileId'));
+            if (!$submissionFile) {
+                continue;
+            }
+
+            $fileName = $submissionFile->getData('name', $pubLocale);
+            $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
+
+            // @todo possible to turn into a single request with multiple files to reduce API calls?
+            try {
+                $response = $httpClient->request(
+                    'POST',
+                    $filesUrl,
+                    [
+                        'headers' => $headers,
+                        'multipart' => [
+                            [
+                                'name' => 'name',
+                                'contents' => $fileName,
+                            ],
+                            [
+                                'name' => 'file',
+                                'contents' => Psr7\Utils::tryFopen($filePath, 'r'),
+                            ],
+                        ],
+                    ],
+                );
+            } catch (GuzzleException | Exception $e) {
+                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+            }
+
+            if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_OK) {
+                return [['plugins.importexport.zenodo.register.error.fileError', $status . ' - ' . $response->getBody()]];
+            }
+        }
+        return true;
     }
 }
