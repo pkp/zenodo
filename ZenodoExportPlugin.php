@@ -229,12 +229,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             assert($filter != null);
             // Set filter for JSON
             $filter = 'article=>zenodo-json';
-            foreach ($objects as $object) { // @todo fix output formatting when multiple articles are selected
+            $items = [];
+            foreach ($objects as $object) {
                 // Get the JSON
                 $exportJson = $this->exportJSON($object, $filter, $context);
-                header('Content-Type: application/json');
-                echo $exportJson;
+                $export = json_decode($exportJson);
+                $items[] = $export;
             }
+            // Display the combined JSON for all articles selected
+            header('Content-Type: application/json');
+            echo json_encode($items);
         } else { // @todo remove?
             parent::executeExportAction($request, $objects, $filter, $tab, $objectsFileNamePart, $noValidation);
         }
