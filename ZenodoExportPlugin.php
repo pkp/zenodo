@@ -136,6 +136,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $apiKey = $this->getSetting($context->getId(), 'apiKey');
 
         $url = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL) . ZENODO_API_OPERATION;
+        $mintDoi = $this->getSetting($context->getId(), 'mint_doi');
+        if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
+            return [['plugins.importexport.zenodo.register.error.noDoi']];
+        }
+
         $headers = [
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',

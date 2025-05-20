@@ -99,13 +99,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article = [];
         $article['metadata'] = [];
 
-        // see https://developers.zenodo.org/#representation
-
         // Upload and publication type
         $uploadType = 'publication';
         $article['metadata']['upload_type'] = $uploadType;
 
-        $publicationType = 'article'; // or book, preprint
+        $publicationType = 'article';
+//        $applicationName = Application::get()->getName(); // ojs2, omp, ops
+//        $publicationType = match ($applicationName) {
+//            'ojs2' => 'article',
+//            'omp' => 'book',
+//            'ops' => 'preprint',
+//        };
         $article['metadata']['publication_type'] = $publicationType;
 
         // Publication date
@@ -116,7 +120,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
 
         // Article title
-        // @todo check calls to get localized data
         $article['metadata']['title'] = $publication?->getLocalizedTitle($publicationLocale) ?? '';
 
         // Authors: name, affiliation and ORCID
@@ -158,7 +161,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() != null) {
                     $status = 'embargoed';
                 } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() == null) {
-                    $status = 'closed';
+                    $status = 'closed'; // @todo closed or restricted?
                 }
             }
         }
@@ -183,16 +186,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // $article['metadata']['access_conditions'] = '';
 
         // DOI
-        // @todo handle DOI settings
-        $mintDoi = $plugin->getSetting($context->getId(), 'mint_doi');
-        if (!$mintDoi) {
-            $doi = $publication->getDoi();
-            if (!empty($doi)) {
-                $article['metadata']['doi'] = $doi;
-            } else {
-                error_log('Warning: DOI is empty');
-                // minting new DOI in Zenodo - end execution?
-            }
+        $doi = $publication->getDoi();
+        if (!empty($doi)) {
+            $article['metadata']['doi'] = $doi;
         }
 
         // Keywords
@@ -203,9 +199,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             [$publicationLocale]
         );
 
-        $allowedNoOfKeywords = array_slice($keywords[$publicationLocale] ?? [], 0, 6);
         if (!empty($keywords[$publicationLocale])) {
-            $article['metadata']['keywords'] = $allowedNoOfKeywords;
+            $article['metadata']['keywords'] = $keywords;
         }
 
         // Related identifiers
@@ -243,18 +238,18 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata']['references'] = $rawCitations;
 
         // Zenodo community
-        // @todo Confirm this is working on Zenodo side; consider option for multiple communities
-        $community = $plugin->getSetting($context->getId(), 'community');
-        if ($community) {
-            $article['metadata']['communities'][] = ['identifier' => $community];
-        }
+        // Does not work via the API
+        // https://github.com/zenodo/zenodo-rdm/issues/851
+        // $community = $plugin->getSetting($context->getId(), 'community');
+        // if ($community) {
+        //     $article['metadata']['communities'][] = ['identifier' => $community];
+        // }
 
-        // @todo funding metadata
-        // currently failing in zenodo api
+        // Funding metadata
         $fundingMetadata = $this->fundingMetadata($submissionId);
-        //        if ($fundingMetadata) {
-        //            $article['metadata']['grants'] = $fundingMetadata;
-        //        }
+        if ($fundingMetadata) {
+            $article['metadata']['grants'] = $fundingMetadata;
+        }
 
         // Journal title
         $journalTitle = $context->getName($context->getPrimaryLocale());
@@ -332,20 +327,20 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         if (!$funderIds->isEmpty()) {
             foreach ($funderIds as $funderId => $funderIdentification) {
-                if ($this->isValidFunder($funderIdentification)) {
+                if ($funderRor = $this->getFunderROR($funderIdentification)) {
                     $validFunders = true;
-                } else {
-                    continue;
-                }
 
-                $awardIds = DB::table('funder_awards')
-                    ->where('funder_id', $funderId)
-                    ->pluck('funder_award_number');
+                    $awardIds = DB::table('funder_awards')
+                        ->where('funder_id', $funderId)
+                        ->pluck('funder_award_number');
 
-                foreach ($awardIds as $awardId) {
-                    $fundData[] = [
-                        'id' => str_replace('https://doi.org/', '', $funderIdentification) . '::' . $awardId
-                    ];
+                    foreach ($awardIds as $awardId) {
+                        if ($this->isValidAward($funderRor, $awardId) === true) {
+                            $fundData[] = [
+                                'id' => str_replace('https://doi.org/', '', $funderIdentification) . '::' . $awardId
+                            ];
+                        }
+                    }
                 }
             }
 
@@ -353,44 +348,73 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 return false;
             }
         }
-
         return $fundData ?? false;
     }
 
     /*
-     * Helper function for checking if a funder is supported in Zenodo
+     * May not be needed when funding plugin migrates to use ROR
+     * List based on:
+     * https://github.com/zenodo/zenodo/blob/482ee72ad501cbbd7f8ce8df9b393c130d1970f7/zenodo/modules/deposit/static/json/zenodo_deposit/deposit_form.json#L538
+     * https://github.com/zenodo/zenodo/issues/2371
+     * mapping:
+     * https://github.com/zenodo/zenodo-rdm/blob/4497e605088a7c968b6a6b74009d88cd8bf4f020/legacy/zenodo_legacy/funders.py#L13
+     * funders API: https://zenodo.org/api/funders/{rorId}
      */
-    private function isValidFunder(string $funder): bool
+    private function getFunderROR(string $funderIdentification): string|bool
     {
-        $validFunders = [
-            'https://doi.org/10.13039/501100002341', // Academy of Finland
-            'https://doi.org/10.13039/501100001665', // Agence Nationale de la Recherche
-            'https://doi.org/10.13039/100018231',    // Aligning Science Across Parkinson’s
-            'https://doi.org/10.13039/501100000923', // Australian Research Council
-            'https://doi.org/10.13039/501100002428', // Austrian Science Fund
-            'https://doi.org/10.13039/501100000024', // Canadian Institutes of Health Research
-            'https://doi.org/10.13039/501100000780', // European Commission
-            'https://doi.org/10.13039/501100000806', // European Environment Agency
-            'https://doi.org/10.13039/501100001871', // Fundação para a Ciência e a Tecnologia
-            'https://doi.org/10.13039/501100004488', // Hrvatska Zaklada za Znanost
-            'https://doi.org/10.13039/501100006364', // Institut National Du Cancer
-            'https://doi.org/10.13039/501100004564', // Ministarstvo Prosvete, Nauke i Tehnološkog Razvoja
-            'https://doi.org/10.13039/501100006588', // Ministarstvo Znanosti, Obrazovanja i Sporta
-            'https://doi.org/10.13039/501100000925', // National Health and Medical Research Council
-            'https://doi.org/10.13039/100000002',    // National Institutes of Health
-            'https://doi.org/10.13039/100000001',    // National Science Foundation
-            'https://doi.org/10.13039/501100000038', // Natural Sciences and Engineering Research Council of Canada
-            'https://doi.org/10.13039/501100003246', // Nederlandse Organisatie voor Wetenschappelijk Onderzoek
-            'https://doi.org/10.13039/501100000690', // Research Councils
-            'https://doi.org/10.13039/501100001711', // Schweizerischer Nationalfonds zur Förderung der wissenschaftlichen Forschung
-            'https://doi.org/10.13039/501100001602', // Science Foundation Ireland
-            'https://doi.org/10.13039/100001345',    // Social Science Research Council
-            'https://doi.org/10.13039/501100011730', // Templeton World Charity Foundation
-            'https://doi.org/10.13039/501100004410', // Türkiye Bilimsel ve Teknolojik Araştırma Kurumu
-            'https://doi.org/10.13039/100014013',    // UK Research and Innovation
-            'https://doi.org/10.13039/100004440',    // Wellcome Trust
-        ];
+        return match ($funderIdentification) {
+            'https://doi.org/10.13039/501100002341' => '05k73zm37', // Academy of Finland
+            'https://doi.org/10.13039/501100001665' => '00rbzpz17', // Agence Nationale de la Recherche
+            'https://doi.org/10.13039/100018231'    => '03zj4c476', // Aligning Science Across Parkinson’s
+            'https://doi.org/10.13039/501100000923' => '05mmh0f86', // Australian Research Council
+            'https://doi.org/10.13039/501100002428' => '013tf3c58', // Austrian Science Fund
+            'https://doi.org/10.13039/501100000024' => '01gavpb45', // Canadian Institutes of Health Research
+            'https://doi.org/10.13039/501100000780' => '00k4n6c32', // European Commission
+            'https://doi.org/10.13039/501100000806' => '02k4b9v70', // European Environment Agency
+            'https://doi.org/10.13039/501100001871' => '00snfqn58', // Fundação para a Ciência e a Tecnologia
+            'https://doi.org/10.13039/501100004488' => '03n51vw80', // Hrvatska Zaklada za Znanost
+            'https://doi.org/10.13039/501100006364' => '03m8vkq32', // Institut National Du Cancer
+            'https://doi.org/10.13039/501100004564' => '01znas443', // Ministarstvo Prosvete, Nauke i Tehnološkog Razvoja
+            'https://doi.org/10.13039/501100006588' => '0507etz14', // Ministarstvo Znanosti, Obrazovanja i Sporta // @todo check
+            'https://doi.org/10.13039/501100000925' => '011kf5r70', // National Health and Medical Research Council
+            'https://doi.org/10.13039/100000002'    => '01cwqze88', // National Institutes of Health
+            'https://doi.org/10.13039/100000001'    => '021nxhr62', // National Science Foundation
+            'https://doi.org/10.13039/501100000038' => '01h531d29', // Natural Sciences and Engineering Research Council of Canada
+            'https://doi.org/10.13039/501100003246' => '04jsz6e67', // Nederlandse Organisatie voor Wetenschappelijk Onderzoek
+            'https://doi.org/10.13039/501100001711' => '00yjd3n13', // Schweizerischer Nationalfonds zur Förderung der wissenschaftlichen Forschung
+            'https://doi.org/10.13039/501100001602' => '0271asj38', // Science Foundation Ireland
+            'https://doi.org/10.13039/100001345'    => '006cvnv84', // Social Science Research Council
+            'https://doi.org/10.13039/501100011730' => '00x0z1472', // Templeton World Charity Foundation
+            'https://doi.org/10.13039/501100004410' => '04w9kkr77', // Türkiye Bilimsel ve Teknolojik Araştırma Kurumu
+            'https://doi.org/10.13039/501100000690',
+            'https://doi.org/10.13039/100014013'    => '001aqnf71', // Research Councils UK, UK Research and Innovation
+            'https://doi.org/10.13039/100004440'    => '029chgv08', // Wellcome Trust
+            default => false,
+        };
+    }
 
-        return in_array($funder, $validFunders);
+    /*
+     * Check against Zenodo's awards API that a given
+     * combination of a funder (ROR) and award number
+     * is valid for import.
+     * Endpoint format: https://zenodo.org/api/awards/{ROR::award}
+     */
+    private function isValidAward(string $funderRor, string $award): bool|array
+    {
+        $url = 'https://sandbox.zenodo.org/api/awards/' . $funderRor . '::' . $award; // @todo fix
+        $httpClient = Application::get()->getHttpClient();
+        try {
+            $response = $httpClient->request('GET', $url);
+            $statusCode = $response->getStatusCode();
+            $body = json_decode($response->getBody(), true);
+
+            if ($statusCode === 200 && $body['id'] == $funderRor . '::' . $award) {
+                return true;
+            } else {
+                return false;
+            }
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
+        }
     }
 }
