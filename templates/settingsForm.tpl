@@ -24,13 +24,6 @@
 			{fbvElement type="text" id="apiKey" value=$apiKey label="plugins.importexport.zenodo.settings.form.apiKey" maxlength="100" size=$fbvStyles.size.MEDIUM}
 			<br/>
 		{/fbvFormSection}
-{*		{fbvFormSection}*}
-{*			<p class="help">*}
-{*				{translate key="plugins.importexport.zenodo.settings.form.community.description"}*}
-{*			</p>*}
-{*			{fbvElement type="text" id="community" value=$community label="plugins.importexport.zenodo.settings.form.community" maxlength="100" size=$fbvStyles.size.MEDIUM}*}
-{*			<br/>*}
-{*		{/fbvFormSection}*}
 		{fbvFormSection list="true"}
 			{fbvElement type="checkbox" id="automaticRegistration" label="plugins.importexport.zenodo.settings.form.automaticRegistration.description" checked=$automaticRegistration|compare:true}
 		{/fbvFormSection}

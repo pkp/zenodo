@@ -136,7 +136,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $apiKey = $this->getSetting($context->getId(), 'apiKey');
 
         $url = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL) . ZENODO_API_OPERATION;
-        $mintDoi = $this->getSetting($context->getId(), 'mint_doi');
+        $mintDoi = $this->mintZenodoDois($context);
         if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
             return [['plugins.importexport.zenodo.register.error.noDoi']];
         }
@@ -259,6 +259,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $exportDeployment = $this->_instantiateExportDeployment($context);
         $exportFilter->setDeployment($exportDeployment);
         return $exportFilter->execute($object, true);
+    }
+
+    /**
+     * Check whether we will allow Zenodo to mint DOIs.
+     */
+    public function mintZenodoDois(Context $context): bool
+    {
+        return ($this->getSetting($context->getId(), 'mintDoi') == 1);
     }
 
     /**

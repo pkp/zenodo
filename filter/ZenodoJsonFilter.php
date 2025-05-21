@@ -17,6 +17,7 @@
 namespace APP\plugins\importexport\zenodo\filter;
 
 use APP\core\Application;
+use APP\decision\Decision;
 use APP\facades\Repo;
 use APP\issue\Issue;
 use APP\journal\Journal;
@@ -25,6 +26,7 @@ use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
 use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\DB;
 use PKP\citation\CitationDAO;
 use PKP\controlledVocab\ControlledVocab;
@@ -104,12 +106,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata']['upload_type'] = $uploadType;
 
         $publicationType = 'article';
-//        $applicationName = Application::get()->getName(); // ojs2, omp, ops
-//        $publicationType = match ($applicationName) {
-//            'ojs2' => 'article',
-//            'omp' => 'book',
-//            'ops' => 'preprint',
-//        };
+        //        $applicationName = Application::get()->getName(); // ojs2, omp, ops
+        //        $publicationType = match ($applicationName) {
+        //            'ojs2' => 'article',
+        //            'omp' => 'book',
+        //            'ops' => 'preprint',
+        //        };
         $article['metadata']['publication_type'] = $publicationType;
 
         // Publication date
@@ -299,6 +301,25 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $language = LocaleConversion::get3LetterFrom2LetterIsoLanguage($publicationLocale);
         if ($language) {
             $article['metadata']['language'] = $language;
+        }
+
+        // Dates
+        // Options: Accepted, Available, Collected, Copyrighted, Created, Issued, Other, Submitted, Updated, Valid, Withdrawn
+        // For an exact date, use the same value for both start and end.
+        // Example: [{"start": "2018-03-21", "end": "2018-03-25", "type": "Collected", "description": "Specimen A5 collection period."}]
+
+        $editorDecision = Repo::decision()->getCollector()
+            ->filterBySubmissionIds([$publicationId])
+            ->getMany()
+            ->first(fn (Decision $decision, $key) => $decision->getData('decision') === Decision::ACCEPT);
+
+        if ($editorDecision) {
+            $decisionDate = Carbon::parse($editorDecision->getData('dateDecided'));
+            $article['metadata']['dates'][] = [
+                "start" => $decisionDate->format('Y-m-d'),
+                "end" => $decisionDate->format('Y-m-d'),
+                "type" => "Accepted",
+            ];
         }
 
         // @todo remove later

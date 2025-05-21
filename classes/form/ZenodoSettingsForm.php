@@ -109,8 +109,7 @@ class ZenodoSettingsForm extends Form
             'apiKey' => 'string',
             'automaticRegistration' => 'bool',
             'testMode' => 'bool',
-            'mintDOI' => 'bool', // @TODO proper implementation
-            'community' => 'string' // @TODO for submitting all articles to a zenodo community
+            'mintDoi' => 'bool',
         ];
     }
 
@@ -119,6 +118,6 @@ class ZenodoSettingsForm extends Form
      */
     public function isOptional(string $settingName): bool
     {
-        return in_array($settingName, ['apiKey', 'automaticRegistration', 'testMode', 'mintDOI', 'community']);
+        return in_array($settingName, ['apiKey', 'automaticRegistration', 'testMode', 'mintDoi']);
     }
 }
