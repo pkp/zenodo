@@ -237,7 +237,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // References
         $citationDao = DAORegistry::getDAO('CitationDAO'); /** @var CitationDAO $citationDao */
         $rawCitations = $citationDao->getRawCitationsByPublicationId($publicationId)->toArray();
-        $article['metadata']['references'] = $rawCitations;
+        if ($rawCitations) {
+            $article['metadata']['references'] = $rawCitations;
+        }
 
         // Zenodo community
         // Does not work via the API
