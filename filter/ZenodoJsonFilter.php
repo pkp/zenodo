@@ -202,7 +202,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         );
 
         if (!empty($keywords[$publicationLocale])) {
-            $article['metadata']['keywords'] = $keywords;
+            $article['metadata']['keywords'] = $keywords[$publicationLocale];
         }
 
         // Related identifiers
