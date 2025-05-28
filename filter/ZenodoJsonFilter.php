@@ -29,7 +29,6 @@ use Exception;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\DB;
 use PKP\citation\CitationDAO;
-use PKP\controlledVocab\ControlledVocab;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
 use PKP\filter\FilterGroup;
@@ -194,15 +193,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Keywords
-        $keywords = Repo::controlledVocab()->getBySymbolic(
-            ControlledVocab::CONTROLLED_VOCAB_SUBMISSION_KEYWORD,
-            Application::ASSOC_TYPE_PUBLICATION,
-            $publicationId,
-            [$publicationLocale]
-        );
-
-        if (!empty($keywords[$publicationLocale])) {
-            $article['metadata']['keywords'] = $keywords[$publicationLocale];
+        $keywords = $publication->getData('keywords', $publicationLocale);
+        if (!empty($keywords)) {
+            $article['metadata']['keywords'] = $keywords;
         }
 
         // Related identifiers
