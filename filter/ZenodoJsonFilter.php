@@ -147,23 +147,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['description'] = PKPString::html2text($abstract);
         }
 
-        // @todo confirm if anything fits "restricted" access in OJS
-        // Access Rights - adapted from the DRIVER plugin
-        // options: open, embargoed, restricted, closed
-        $status = ''; // @todo open as default? Zenodo API defaults to open if not sent.
-        if ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_OPEN) {
-            $status = 'open';
-        } elseif ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION) {
-            if ($issue->getAccessStatus() == 0 || $issue->getAccessStatus() == Issue::ISSUE_ACCESS_OPEN) {
-                $status = 'open';
-            } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION) {
-                if ($publication->getData('accessStatus') == Submission::ARTICLE_ACCESS_OPEN) {
-                    $status = 'open';
-                } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() != null) {
-                    $status = 'embargoed';
-                } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() == null) {
-                    $status = 'closed'; // @todo closed or restricted?
-                }
+        // Access Rights
+        // Defaults to open, which Zenodo does if not set
+        $status = 'open';
+        if ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION) {
+            if ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() != null) {
+                $status = 'embargoed';
+            } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() == null) {
+                $status = 'closed';
             }
         }
 
@@ -181,10 +172,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 $article['metadata']['embargo_date'] = $openAccessDate->format('Y-m-d');
             }
         }
-
-        // @todo if access_right = restricted (may not be applicable for this plugin)
-        // free text string
-        // $article['metadata']['access_conditions'] = '';
 
         // DOI
         $doi = $publication->getDoi();
@@ -274,7 +261,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Publisher name
         $publisher = $context->getData('publisherInstitution');
         if (!empty($publisher)) {
-            $article['metadata']['imprint_publisher'] = $publisher; //
+            $article['metadata']['imprint_publisher'] = $publisher;
         }
 
         // @todo subjects only with a proper controlled vocabulary
@@ -316,10 +303,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 "type" => "Accepted",
             ];
         }
-
-        // @todo remove later
-        $prettyJson = json_encode($article, JSON_PRETTY_PRINT);
-        error_log(print_r($prettyJson, true));
 
         $json = json_encode($article, JSON_UNESCAPED_SLASHES);
         return $json;
