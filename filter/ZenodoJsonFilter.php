@@ -313,12 +313,16 @@ class ZenodoJsonFilter extends PKPImportExportFilter
      */
     private function fundingMetadata(int $submissionId): false|array
     {
+        /** @var ZenodoExportDeployment $deployment */
+        $deployment = $this->getDeployment();
+        $context = $deployment->getContext();
+        /** @var ZenodoExportPlugin $plugin */
+        $plugin = $deployment->getPlugin();
+
         // @todo temporarily removed this check for plugin development
         // if (!PluginRegistry::getPlugin('generic', 'FundingPlugin')) {
         //     return false;
         // }
-
-        $validFunders = false;
 
         $funderIds = DB::table('funders')
             ->where('submission_id', $submissionId)
@@ -327,24 +331,18 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         if (!$funderIds->isEmpty()) {
             foreach ($funderIds as $funderId => $funderIdentification) {
                 if ($funderRor = $this->getFunderROR($funderIdentification)) {
-                    $validFunders = true;
-
                     $awardIds = DB::table('funder_awards')
                         ->where('funder_id', $funderId)
                         ->pluck('funder_award_number');
 
                     foreach ($awardIds as $awardId) {
-                        if ($this->isValidAward($funderRor, $awardId) === true) {
+                        if ($plugin->isValidAward($context, $funderRor, $awardId) === true) {
                             $fundData[] = [
                                 'id' => str_replace('https://doi.org/', '', $funderIdentification) . '::' . $awardId
                             ];
                         }
                     }
                 }
-            }
-
-            if (!$validFunders) {
-                return false;
             }
         }
         return $fundData ?? false;
@@ -374,7 +372,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'https://doi.org/10.13039/501100004488' => '03n51vw80', // Hrvatska Zaklada za Znanost
             'https://doi.org/10.13039/501100006364' => '03m8vkq32', // Institut National Du Cancer
             'https://doi.org/10.13039/501100004564' => '01znas443', // Ministarstvo Prosvete, Nauke i Tehnološkog Razvoja
-            'https://doi.org/10.13039/501100006588' => '0507etz14', // Ministarstvo Znanosti, Obrazovanja i Sporta // @todo check
+            'https://doi.org/10.13039/501100006588' => '0507etz14', // Ministarstvo Znanosti, Obrazovanja i Sporta //
             'https://doi.org/10.13039/501100000925' => '011kf5r70', // National Health and Medical Research Council
             'https://doi.org/10.13039/100000002'    => '01cwqze88', // National Institutes of Health
             'https://doi.org/10.13039/100000001'    => '021nxhr62', // National Science Foundation
@@ -390,30 +388,5 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'https://doi.org/10.13039/100004440'    => '029chgv08', // Wellcome Trust
             default => false,
         };
-    }
-
-    /*
-     * Check against Zenodo's awards API that a given
-     * combination of a funder (ROR) and award number
-     * is valid for import.
-     * Endpoint format: https://zenodo.org/api/awards/{ROR::award}
-     */
-    private function isValidAward(string $funderRor, string $award): bool|array
-    {
-        $url = 'https://sandbox.zenodo.org/api/awards/' . $funderRor . '::' . $award; // @todo fix
-        $httpClient = Application::get()->getHttpClient();
-        try {
-            $response = $httpClient->request('GET', $url);
-            $statusCode = $response->getStatusCode();
-            $body = json_decode($response->getBody(), true);
-
-            if ($statusCode === 200 && $body['id'] == $funderRor . '::' . $award) {
-                return true;
-            } else {
-                return false;
-            }
-        } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
-        }
     }
 }

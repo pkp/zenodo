@@ -63,6 +63,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
 
     /**
      * @copydoc ImportExportPlugin::display()
+     * @throws Exception
      */
     public function display($args, $request): void
     {
@@ -339,5 +340,32 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             }
         }
         return true;
+    }
+
+    /*
+     * Check against Zenodo's awards API that a given
+     * combination of a funder (ROR) and award number
+     * is valid for import.
+     * Endpoint format: https://zenodo.org/api/awards/{ROR::award}
+     */
+    public function isValidAward(Context $context, string $funderRor, string $award): bool|array
+    {
+        $apiUrl = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL);
+        $awardsUrl = $apiUrl . '/awards/' . $funderRor . '::' . $award;
+        $httpClient = Application::get()->getHttpClient();
+
+        try {
+            $response = $httpClient->request('GET', $awardsUrl);
+            $statusCode = $response->getStatusCode();
+            $body = json_decode($response->getBody(), true);
+
+            if ($statusCode === 200 && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
+                return true;
+            } else {
+                return false;
+            }
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
+        }
     }
 }
