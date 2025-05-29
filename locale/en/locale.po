@@ -17,7 +17,13 @@ msgstr "Zenodo Export Plugin"
 msgid "plugins.importexport.zenodo.description"
 msgstr "Export Journal to Zenodo."
 
-msgid "plugins.importexport.zenodo.export.account"
+msgid "plugins.importexport.zenodo.fullDescription"
+msgstr ""
+"The Zenodo Export plugin allows you to deposit your articles to the Zenodo Repository. Once you have created a Zenodo"
+" account and entered your API key, you can send your articles and issues to Zenodo. This will create a draft in Zenodo,"
+" ready for publication within the Zenodo interface."
+
+msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account."
 
 msgid "plugins.importexport.zenodo.registrationIntro"
@@ -28,43 +34,34 @@ msgstr ""
 msgid "plugins.importexport.zenodo.settings.form.apiKey"
 msgstr "Zenodo API Key"
 
-msgid ""
-"plugins.importexport.zenodo.settings.form.automaticRegistration.description"
+msgid "plugins.importexport.zenodo.settings.form.automaticRegistration.description"
 msgstr ""
-"OJS will deposit articles automatically to Zenodo. Please note that this may "
+"<strong>Automatic Deposit</strong>: Deposit articles automatically to Zenodo. Please note that this may "
 "take a short amount of time after publication to process (e.g. depending on "
-"your cronjob configuration). You can check for all unregistered articles."
-
-msgid "plugins.importexport.zenodo.settings.form.community"
-msgstr "Zenodo Community"
-
-msgid "plugins.importexport.zenodo.settings.form.community.description"
-msgstr "(Optional) Enter the Zenodo community to submit articles to."
+"your cronjob configuration)."
 
 msgid "plugins.importexport.zenodo.settings.form.doi.description"
 msgstr ""
-"Allow Zenodo to mint DOIs when a DOI has not been created in OJS. If not selected, objects will not be deposited"
+"<strong>Zenodo DOIs:</strong> Allow Zenodo to mint DOIs when a DOI has not been created in OJS. If not enabled, objects will not be deposited"
 " unless they have a DOI."
 
 msgid "plugins.importexport.zenodo.settings.form.testMode.description"
 msgstr ""
-"Use the Zenodo sandbox API (testing environment) for the registration. Please do "
-"not forget to remove this option for the production."
+"<strong>Test Mode:</strong> Use the <a href=\"https://sandbox.zenodo.org\">Zenodo Sandbox</a> API "
+"for registration. "
+"Please do not forget to disable this option for production."
 
 msgid "plugins.importexport.zenodo.senderTask.name"
 msgstr "Zenodo automatic registration task"
 
 msgid "plugins.importexport.zenodo.register.error.mdsError"
-msgstr ""
-"Deposit was not successful! The Zenodo API returned an error: '{$param}'."
+msgstr "Deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.register.error.fileError"
-msgstr ""
-"File deposit was not successful! The Zenodo API returned an error: '{$param}'."
+msgstr "File deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.register.error.noDoi"
-msgstr ""
-"An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
+msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
 
 msgid "plugins.importexport.zenodo.cliUsage"
 msgstr ""
