@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/doaj/DOAJInfoSender.php
+ * @file plugins/importexport/zenodo/ZenodoInfoSender.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -16,7 +16,7 @@ namespace APP\plugins\importexport\zenodo;
 
 use APP\core\Application;
 use APP\journal\Journal;
-use APP\journal\JournalDAO;
+use Exception;
 use PKP\plugins\PluginRegistry;
 use PKP\scheduledTask\ScheduledTask;
 use PKP\scheduledTask\ScheduledTaskHelper;
@@ -70,7 +70,7 @@ class ZenodoInfoSender extends ScheduledTask
             $unregisteredArticles = $plugin->getUnregisteredArticles($journal);
             // If there are articles to be deposited
             if (count($unregisteredArticles)) {
-                $this->registerObjects($unregisteredArticles, 'article=>zenodo-json', $journal, 'articles');
+                $this->registerObjects($unregisteredArticles, 'article=>zenodo-json', $journal);
             }
         }
 
@@ -90,7 +90,10 @@ class ZenodoInfoSender extends ScheduledTask
         $journals = [];
         while ($journal = $journalFactory->next()) {
             $journalId = $journal->getId();
-            if (!$plugin->getSetting($journalId, 'apiKey') || !$plugin->getSetting($journalId, 'automaticRegistration')) {
+            if (
+                !$plugin->getSetting($journalId, 'apiKey') ||
+                !$plugin->getSetting($journalId, 'automaticRegistration')
+            ) {
                 continue;
             }
             $journals[] = $journal;
@@ -102,7 +105,7 @@ class ZenodoInfoSender extends ScheduledTask
     /**
      * Register objects
      */
-    public function registerObjects(array $objects, string $filter, Journal $journal, string $objectsFileNamePart): void
+    public function registerObjects(array $objects, string $filter, Journal $journal): void
     {
         $plugin = $this->plugin;
         foreach ($objects as $object) {
@@ -118,6 +121,7 @@ class ZenodoInfoSender extends ScheduledTask
 
     /**
      * Add execution log entry
+     * @throws Exception
      */
     public function addLogEntry(array $errors): void
     {

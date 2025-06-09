@@ -16,6 +16,7 @@
 
 namespace APP\plugins\importexport\zenodo\filter;
 
+use APP\author\Author;
 use APP\core\Application;
 use APP\decision\Decision;
 use APP\facades\Repo;
@@ -26,7 +27,6 @@ use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
 use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
-use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\DB;
 use PKP\citation\CitationDAO;
 use PKP\core\PKPString;
@@ -49,14 +49,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         parent::__construct($filterGroup);
     }
 
-    /**
-     * Set no validation option
-     */
-    public function setNoValidation(bool $noValidation): void
-    {
-        $this->noValidation = $noValidation;
-    }
-
     //
     // Implement template methods from Filter
     //
@@ -76,10 +68,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
         $cache = $plugin->getCache();
-
-        // Create the JSON string
-        // https://developers.zenodo.org/#depositions
-        // https://github.com/zenodo/zenodo/blob/master/zenodo/modules/deposit/jsonschemas/deposits/records/legacyrecord.json
 
         $submissionId = $pubObject->getId();
         $publication = $pubObject->getCurrentPublication();
@@ -101,41 +89,45 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['metadata'] = [];
 
         // Upload and publication type
-        $uploadType = 'publication';
-        $article['metadata']['upload_type'] = $uploadType;
+        $article['metadata']['upload_type'] = 'publication';
+        $article['metadata']['publication_type'] = 'article';
 
-        $publicationType = 'article';
-        //        $applicationName = Application::get()->getName(); // ojs2, omp, ops
-        //        $publicationType = match ($applicationName) {
-        //            'ojs2' => 'article',
-        //            'omp' => 'book',
-        //            'ops' => 'preprint',
-        //        };
-        $article['metadata']['publication_type'] = $publicationType;
+        // $applicationName = Application::get()->getName(); // ojs2, omp, ops
+        // $publicationType = match ($applicationName) {
+        //     'ojs2' => 'article',
+        //     'omp' => 'book',
+        //     'ops' => 'preprint',
+        // };
 
         // Publication date
-        $publicationDate = Carbon::parse($issue->getDatePublished());
         if ($publication->getData('datePublished')) {
             $publicationDate = Carbon::parse($publication->getData('datePublished'));
+        } elseif ($issue->getDatePublished()) {
+            $publicationDate = Carbon::parse($issue->getDatePublished());
         }
-        $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
+
+        if ($publicationDate) {
+            $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
+        }
 
         // Article title
-        $article['metadata']['title'] = $publication?->getLocalizedTitle($publicationLocale) ?? '';
+        if ($publication->getLocalizedTitle($publicationLocale)) {
+            $article['metadata']['title'] = $publication->getLocalizedTitle($publicationLocale);
+        }
 
         // Authors: name, affiliation and ORCID
         $articleAuthors = $publication->getData('authors');
         if ($articleAuthors->isNotEmpty()) {
             $article['metadata']['creators'] = [];
 
-            foreach ($articleAuthors as $articleAuthor) {
+            foreach ($articleAuthors as $articleAuthor) { /** @var Author $author */
                 $author = ['name' => $articleAuthor->getFullName(false, false, $publicationLocale)];
                 $affiliations = $articleAuthor->getLocalizedAffiliationNamesAsString($publicationLocale);
                 if (!empty($affiliations)) {
                     $author['affiliation'] = $affiliations;
                 }
-                if ($articleAuthor->getData('orcid') && $articleAuthor->getData('orcidIsVerified')) {
-                    $author['orcid'] = $articleAuthor->getData('orcid');
+                if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
+                    $author['orcid'] = $articleAuthor->getOrcid();
                 }
                 $article['metadata']['creators'][] = $author;
             }
@@ -148,20 +140,18 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Access Rights
-        // Defaults to open, which Zenodo does if not set
+        // Defaults to open, which Zenodo does if not set. Subscription with no OA date is set as closed.
         $status = 'open';
-        if ($context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION) {
-            if ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() != null) {
-                $status = 'embargoed';
-            } elseif ($issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION && $issue->getOpenAccessDate() == null) {
-                $status = 'closed';
-            }
+        if (
+            $context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION &&
+            $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
+        ) {
+            $status = $issue->getOpenAccessDate() ? 'embargoed' : 'closed';
         }
 
         $article['metadata']['access_right'] = $status;
 
-        // options: https://developers.zenodo.org/#licenses
-        // @todo should we consider other types of license URLs or just cc?
+        // License and embargo date
         if ($status == 'open' || $status == 'embargoed') {
             $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
             if (preg_match('/creativecommons\.org\/licenses\/(.*?)\//i', $licenseUrl, $match)) {
@@ -185,10 +175,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['keywords'] = $keywords;
         }
 
-        // Related identifiers
-        // @todo once structured citations are in place add related identifiers using "Cites" relation
-
-        // FullText URL
+        // FullText URL relation
         $request = Application::get()->getRequest();
         $url = $request->getDispatcher()->url(
             $request,
@@ -205,14 +192,21 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'resource_type' => 'publication',
         ];
 
-        // Contributors
-        // @todo check if needed - most roles not applicable to publications context
-        // array of objects
-        // type: Contributor type. Controlled vocabulary (ContactPerson, DataCollector, DataCurator, DataManager,
-        // Distributor, Editor, HostingInstitution, Producer, ProjectLeader, ProjectManager, ProjectMember,
-        // RegistrationAgency, RegistrationAuthority, RelatedPerson, Researcher, ResearchGroup, RightsHolder,
-        // Supervisor, Sponsor, WorkPackageLeader, Other)
-        // $article['metadata']['contributors'] = [];
+        // Cites relation
+        // @todo once structured citations are available add related identifiers using "Cites" relation
+        // @todo "dataset" is also a supported resource type and can be added when data citations are available
+        // $article['metadata']['related_identifiers'][] = [
+        //     'relation' => 'cites',
+        //     'identifier' => '',
+        //     'resource_type' => 'publication',
+        // ];
+
+        // Version relation
+        // $article['metadata']['related_identifiers'][] = [
+        //     'relation' => 'isVersionOf',
+        //     'identifier' => '',
+        //     'resource_type' => 'publication',
+        // ];
 
         // References
         $citationDao = DAORegistry::getDAO('CitationDAO'); /** @var CitationDAO $citationDao */
@@ -220,14 +214,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         if ($rawCitations) {
             $article['metadata']['references'] = $rawCitations;
         }
-
-        // Zenodo community
-        // Does not work via the API
-        // https://github.com/zenodo/zenodo-rdm/issues/851
-        // $community = $plugin->getSetting($context->getId(), 'community');
-        // if ($community) {
-        //     $article['metadata']['communities'][] = ['identifier' => $community];
-        // }
 
         // Funding metadata
         $fundingMetadata = $this->fundingMetadata($submissionId);
@@ -264,15 +250,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['imprint_publisher'] = $publisher;
         }
 
-        // @todo subjects only with a proper controlled vocabulary
-        // array of objects
-        // Specify subjects from a taxonomy or controlled vocabulary. Each term must be uniquely identified (e.g. a URL). For free form text, use the keywords field. Each array element is an object with the attributes:
-        //* term: Term from taxonomy or controlled vocabulary.
-        //* identifier: Unique identifier for term.
-        //* scheme: Persistent identifier scheme for id (automatically detected).
-        //
-        // Example: [{"term": "Astronomy", "identifier": "http://id.loc.gov/authorities/subjects/sh85009003", "scheme": "url"}]
-
         // Publication version
         $version = $publication->getData('version');
         if ($version) {
@@ -286,9 +263,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Dates
-        // Options: Accepted, Available, Collected, Copyrighted, Created, Issued, Other, Submitted, Updated, Valid, Withdrawn
         // For an exact date, use the same value for both start and end.
-        // Example: [{"start": "2018-03-21", "end": "2018-03-25", "type": "Collected", "description": "Specimen A5 collection period."}]
+        // Options: Accepted, Available, Collected, Copyrighted, Created,
+        //          Issued, Other, Submitted, Updated, Valid, Withdrawn
 
         $editorDecision = Repo::decision()->getCollector()
             ->filterBySubmissionIds([$publicationId])
@@ -319,10 +296,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
 
-        // @todo temporarily removed this check for plugin development
-        // if (!PluginRegistry::getPlugin('generic', 'FundingPlugin')) {
-        //     return false;
-        // }
+        if (!PluginRegistry::getPlugin('generic', 'FundingPlugin')) {
+            return false;
+        }
 
         $funderIds = DB::table('funders')
             ->where('submission_id', $submissionId)
@@ -351,11 +327,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /*
      * May not be needed when funding plugin migrates to use ROR
      * List based on:
-     * https://github.com/zenodo/zenodo/blob/482ee72ad501cbbd7f8ce8df9b393c130d1970f7/zenodo/modules/deposit/static/json/zenodo_deposit/deposit_form.json#L538
+     * https://github.com/zenodo/zenodo/blob/master/zenodo/modules/deposit/static/json/zenodo_deposit/deposit_form.json#L538
      * https://github.com/zenodo/zenodo/issues/2371
      * mapping:
-     * https://github.com/zenodo/zenodo-rdm/blob/4497e605088a7c968b6a6b74009d88cd8bf4f020/legacy/zenodo_legacy/funders.py#L13
-     * funders API: https://zenodo.org/api/funders/{rorId}
+     * https://github.com/zenodo/zenodo-rdm/blob/master/legacy/zenodo_legacy/funders.py#L13
      */
     private function getFunderROR(string $funderIdentification): string|bool
     {

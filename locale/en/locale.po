@@ -15,13 +15,7 @@ msgid "plugins.importexport.zenodo.displayName"
 msgstr "Zenodo Export Plugin"
 
 msgid "plugins.importexport.zenodo.description"
-msgstr "Export Journal to Zenodo."
-
-msgid "plugins.importexport.zenodo.fullDescription"
-msgstr ""
-"The Zenodo Export plugin allows you to deposit your articles to the Zenodo Repository. Once you have created a Zenodo"
-" account and entered your API key, you can send your articles and issues to Zenodo. This will create a draft in Zenodo,"
-" ready for publication within the Zenodo interface."
+msgstr "Export journal articles to Zenodo. Articles will be created as a draft in Zenodo."
 
 msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account."

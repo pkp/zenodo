@@ -35,15 +35,17 @@
 		</ul>
 		<div id="settings-tab">
 			{if !$allowExport}
-				<div class="pkp_notification" id="dataciteConfigurationErrors">
+				<div class="pkp_notification" id="zenodoConfigurationErrors">
 					{foreach from=$configurationErrors item=configurationError}
-						{if $configurationError == \APP\plugins\PubObjectsExportPlugin::EXPORT_CONFIG_ERROR_SETTINGS}
+						{if $configurationError == APP\plugins\PubObjectsExportPlugin::EXPORT_CONFIG_ERROR_SETTINGS}
 							{include file="controllers/notification/inPlaceNotificationContent.tpl" notificationId=zenodoConfigurationErrors notificationStyleClass="notifyWarning" notificationTitle="plugins.importexport.common.missingRequirements"|translate notificationContents="plugins.importexport.common.error.pluginNotConfigured"|translate}
 						{/if}
 					{/foreach}
 				</div>
 			{/if}
-			<p><a href="https://zenodo.org/signup/" target="_blank">{translate key="plugins.importexport.zenodo.export.account"}</a></p>
+			<p class="">
+				<a href="https://zenodo.org/signup/" target="_blank">{translate key="plugins.importexport.zenodo.export.createAccount"}</a>
+			</p>
 			{capture assign=zenodoSettingsGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.settings.plugins.settingsPluginGridHandler" op="manage" plugin="ZenodoExportPlugin" category="importexport" verb="index" escape=false}{/capture}
 			{load_url_in_div id="zenodoSettingsGridContainer" url=$zenodoSettingsGridUrl}
 		</div>

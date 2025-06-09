@@ -17,6 +17,7 @@ namespace APP\plugins\importexport\zenodo;
 use APP\core\Application;
 use APP\core\Services;
 use APP\facades\Repo;
+use APP\plugins\importexport\zenodo\filter\ZenodoJsonFilter;
 use APP\plugins\PubObjectsExportPlugin;
 use APP\submission\Submission;
 use APP\template\TemplateManager;
@@ -29,8 +30,10 @@ use PKP\db\DAORegistry;
 use PKP\filter\FilterDAO;
 use PKP\galley\Galley;
 use PKP\notification\Notification;
+use PKP\scheduledTask\PKPScheduler;
 
-define('ZENODO_API_DEPOSIT_OK', 201);
+define('ZENODO_API_OK', 200);
+define('ZENODO_API_DEPOSIT_CREATED', 201);
 define('ZENODO_API_URL', 'https://zenodo.org/api/');
 define('ZENODO_API_URL_DEV', 'https://sandbox.zenodo.org/api/');
 define('ZENODO_API_OPERATION', 'deposit/depositions');
@@ -138,6 +141,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
 
         $url = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL) . ZENODO_API_OPERATION;
         $mintDoi = $this->mintZenodoDois($context);
+
+        if ($object->getData($this->getIdSettingName())) {
+            // @todo determine if/how to handle cases where zenodo ID exists
+            error_log('I already have a zenodo ID');
+        }
+
         if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
             return [['plugins.importexport.zenodo.register.error.noDoi']];
         }
@@ -158,15 +167,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 ]
             );
         } catch (GuzzleException | Exception $e) {
-            error_log('exception catch');
-            error_log($e->getMessage());
             return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
         }
 
         $responseBody = json_decode($response->getBody());
         $zenodoRecId = $responseBody->id;
 
-        if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_OK) { //@TODO check zenodo status codes
+        if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_CREATED) {
             return [['plugins.importexport.zenodo.register.error.mdsError', $status . ' - ' . $response->getBody()]];
         }
 
@@ -240,7 +247,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             // Display the combined JSON for all articles selected
             header('Content-Type: application/json');
             echo json_encode($items);
-        } else { // @todo remove?
+        } else {
             parent::executeExportAction($request, $objects, $filter, $tab, $objectsFileNamePart, $noValidation);
         }
     }
@@ -256,8 +263,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $filterDao = DAORegistry::getDAO('FilterDAO'); /** @var FilterDAO $filterDao */
         $exportFilters = $filterDao->getObjectsByGroup($filter);
         assert(count($exportFilters) == 1); // Assert only a single serialization filter
-        $exportFilter = array_shift($exportFilters);
-        $exportDeployment = $this->_instantiateExportDeployment($context);
+        $exportFilter = array_shift($exportFilters); /** @var ZenodoJsonFilter $exportFilter */
+        $exportDeployment = $this->_instantiateExportDeployment($context); /** @var ZenodoExportDeployment $exportDeployment */
         $exportFilter->setDeployment($exportDeployment);
         return $exportFilter->execute($object, true);
     }
@@ -292,7 +299,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     protected function depositFiles(Submission $object, int $zenodoRecId, string $url, string $apiKey): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
-        $filesUrl = $url . '/' . $zenodoRecId . '/files';
+        $filesUrl = $url . $zenodoRecId . '/files';
         $fileService = Services::get('file');
         $filesDir = Config::getVar('files', 'files_dir');
 
@@ -312,7 +319,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $fileName = $submissionFile->getData('name', $pubLocale);
             $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
 
-            // @todo possible to turn into a single request with multiple files to reduce API calls?
+            // @todo turn into a single request with multiple files to reduce API calls? see GuzzleHttp\Pool
             try {
                 $response = $httpClient->request(
                     'POST',
@@ -335,11 +342,23 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
             }
 
-            if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_OK) {
+            if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_CREATED) {
                 return [['plugins.importexport.zenodo.register.error.fileError', $status . ' - ' . $response->getBody()]];
             }
         }
         return true;
+    }
+
+    /**
+     * @copydoc \PKP\plugins\interfaces\HasTaskScheduler::registerSchedules()
+     */
+    public function registerSchedules(PKPScheduler $scheduler): void
+    {
+        $scheduler
+            ->addSchedule(new ZenodoInfoSender())
+            ->everyMinute()
+            ->name(ZenodoInfoSender::class)
+            ->withoutOverlapping();
     }
 
     /*
@@ -351,7 +370,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public function isValidAward(Context $context, string $funderRor, string $award): bool|array
     {
         $apiUrl = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL);
-        $awardsUrl = $apiUrl . '/awards/' . $funderRor . '::' . $award;
+        $awardsUrl = $apiUrl . 'awards/' . $funderRor . '::' . $award;
         $httpClient = Application::get()->getHttpClient();
 
         try {
@@ -359,7 +378,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody(), true);
 
-            if ($statusCode === 200 && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
+            if ($statusCode === ZENODO_API_OK && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
                 return true;
             } else {
                 return false;
