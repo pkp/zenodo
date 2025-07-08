@@ -278,6 +278,22 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
+     * Check whether we will try to automatically export Zenodo records.
+     */
+    public function automaticRegistration(Context $context): bool
+    {
+        return ($this->getSetting($context->getId(), 'automaticRegistration') == 1);
+    }
+
+    /**
+     * Check whether we will try to automatically publish exported Zenodo records.
+     */
+    public function automaticPublishing(Context $context): bool
+    {
+        return ($this->getSetting($context->getId(), 'automaticPublishing') == 1);
+    }
+
+    /**
      * Get Zenodo ID setting name.
      */
     public function getIdSettingName(): string

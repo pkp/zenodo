@@ -34,6 +34,12 @@ msgstr ""
 "take a short amount of time after publication to process (e.g. depending on "
 "your cronjob configuration)."
 
+msgid "plugins.importexport.zenodo.settings.form.automaticPublishing.description"
+msgstr ""
+"<strong>Automatic Publishing</strong>: Publish records automatically in Zenodo. If not enabled, records "
+"will be created as drafts and can be published in the Zenodo platform. Records can not be deleted in Zenodo "
+" once they are published."
+
 msgid "plugins.importexport.zenodo.settings.form.doi.description"
 msgstr ""
 "<strong>Zenodo DOIs:</strong> Allow Zenodo to mint DOIs when a DOI has not been created in OJS. If not enabled, objects will not be deposited"

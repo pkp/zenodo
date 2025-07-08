@@ -29,6 +29,9 @@
 				{fbvElement type="checkbox" id="automaticRegistration" label="plugins.importexport.zenodo.settings.form.automaticRegistration.description" checked=$automaticRegistration|compare:true}
 			{/fbvFormSection}
 			{fbvFormSection list="true"}
+				{fbvElement type="checkbox" id="automaticPublishing" label="plugins.importexport.zenodo.settings.form.automaticPublishing.description" checked=$automaticPublishing|compare:true}
+			{/fbvFormSection}
+			{fbvFormSection list="true"}
 				{fbvElement type="checkbox" id="mintDoi" label="plugins.importexport.zenodo.settings.form.doi.description" checked=$mintDoi|compare:true}
 			{/fbvFormSection}
 			{fbvFormSection list="true"}

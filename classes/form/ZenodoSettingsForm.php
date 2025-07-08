@@ -59,7 +59,7 @@ class ZenodoSettingsForm extends Form
     }
 
     //
-    // Implement template methods from Form
+    // Implement template methods from Form.
     //
     /**
      * @copydoc Form::initData()
@@ -96,10 +96,10 @@ class ZenodoSettingsForm extends Form
 
 
     //
-    // Public helper methods
+    // Public helper methods.
     //
     /**
-     * Get form fields
+     * Get form fields.
      *
      * @return array (field name => field type)
      */
@@ -108,16 +108,23 @@ class ZenodoSettingsForm extends Form
         return [
             'apiKey' => 'string',
             'automaticRegistration' => 'bool',
+            'automaticPublishing' => 'bool',
             'testMode' => 'bool',
             'mintDoi' => 'bool',
         ];
     }
 
     /**
-     * If the form field is optional
+     * If the form field is optional.
      */
     public function isOptional(string $settingName): bool
     {
-        return in_array($settingName, ['apiKey', 'automaticRegistration', 'testMode', 'mintDoi']);
+        return in_array($settingName, [
+            'apiKey',
+            'automaticRegistration',
+            'automaticPublishing',
+            'testMode',
+            'mintDoi'
+        ]);
     }
 }
