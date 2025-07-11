@@ -36,7 +36,7 @@ define('ZENODO_API_OK', 200);
 define('ZENODO_API_DEPOSIT_CREATED', 201);
 define('ZENODO_API_URL', 'https://zenodo.org/api/');
 define('ZENODO_API_URL_DEV', 'https://sandbox.zenodo.org/api/');
-define('ZENODO_API_OPERATION', 'deposit/depositions');
+define('ZENODO_API_OPERATION', 'records');
 
 class ZenodoExportPlugin extends PubObjectsExportPlugin
 {
@@ -152,8 +152,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         }
 
         $headers = [
-            'Accept' => 'application/json',
             'Content-Type' => 'application/json',
+            'Accept' => 'application/vnd.inveniordm.v1+json',
             'Authorization' => 'Bearer ' . $apiKey,
         ];
 
@@ -310,17 +310,23 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /*
-     * Send files to the Zenodo API (see https://developers.zenodo.org/#deposition-files)
+     * Send files to the Zenodo API (see https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file)
      */
     protected function depositFiles(Submission $object, int $zenodoRecId, string $url, string $apiKey): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
-        $filesUrl = $url . $zenodoRecId . '/files';
+        $filesUrl = $url . '/' . $zenodoRecId . '/draft/files';
         $fileService = Services::get('file');
         $filesDir = Config::getVar('files', 'files_dir');
 
-        $headers = [
+        $metadataHeaders = [
+            'Content-Type' => 'application/json',
             'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        $fileHeaders = [
+                'Content-Type' => 'Content-Type: application/octet-stream',
+                'Authorization' => 'Bearer ' . $apiKey,
         ];
 
         $publication = $object->getCurrentPublication();
@@ -336,28 +342,39 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
 
             // @todo turn into a single request with multiple files to reduce API calls? see GuzzleHttp\Pool
+            // Initialize the file upload
             try {
                 $response = $httpClient->request(
                     'POST',
                     $filesUrl,
                     [
-                        'headers' => $headers,
-                        'multipart' => [
+                        'headers' => $metadataHeaders,
+                        'json' => [
                             [
-                                'name' => 'name',
-                                'contents' => $fileName,
-                            ],
-                            [
-                                'name' => 'file',
-                                'contents' => Psr7\Utils::tryFopen($filePath, 'r'),
-                            ],
-                        ],
+                                'key' => $fileName
+                            ]
+                        ]
                     ],
                 );
             } catch (GuzzleException | Exception $e) {
                 return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
             }
 
+            // Upload the file contents
+            try {
+                $response = $httpClient->request(
+                    'POST',
+                    $filesUrl,
+                    [
+                        'headers' => $fileHeaders,
+                        'body' => Psr7\Utils::tryFopen($filePath, 'r')
+                    ],
+                );
+            } catch (GuzzleException | Exception $e) {
+                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+            }
+
+            //@todo fix for two calls
             if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_CREATED) {
                 return [['plugins.importexport.zenodo.register.error.fileError', $status . ' - ' . $response->getBody()]];
             }

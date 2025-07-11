@@ -24,10 +24,12 @@ use APP\issue\Issue;
 use APP\journal\Journal;
 use APP\plugins\importexport\zenodo\ZenodoExportDeployment;
 use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
+use APP\publication\Publication;
 use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use PKP\affiliation\Affiliation;
 use PKP\citation\CitationDAO;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
@@ -76,7 +78,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         $issueId = $publication->getData('issueId');
         if ($cache->isCached('issues', $issueId)) {
-            $issue = $cache->get('issues', $issueId); /** @var Issue $issue */
+            $issue = $cache->get('issues', $issueId);
+            /** @var Issue $issue */
         } else {
             $issue = Repo::issue()->get($issueId);
             $issue = $issue->getJournalId() == $context->getId() ? $issue : null;
@@ -86,51 +89,84 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         $article = [];
+
+        // Access Rights
+        $status = 'open';
+        $access = 'public';
+        if (
+            $context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION &&
+            $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
+        ) {
+            $status = $issue->getOpenAccessDate() ? 'embargoed' : 'metadata-only';
+            $access = $issue->getOpenAccessDate() ? 'restricted' : 'public';
+        }
+
+        $article['access'] = [
+            'files' => $access,
+            'record' => $access,
+            'status' => $status,
+        ];
+
+        if ($status == 'embargoed') { // @todo test this
+            $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
+            $article['access']['embargo']['active'] = 'true';
+            $article['access']['embargo']['until'] = $openAccessDate->format('Y-m-d');
+        }
+
+        // Journal Metadata @todo move to function?
+        $journalData = [];
+
+        // Journal title
+        $journalTitle = $context->getName($context->getPrimaryLocale());
+        $journalData['title'] = $journalTitle;
+
+        // ISSN
+        if ($context->getData('onlineIssn') != '') {
+            $journalData['issn'] = $context->getData('onlineIssn');
+        } elseif ($context->getData('issn') != '') {
+            $journalData['issn']  = $context->getData('issn');
+        } elseif ($context->getData('printIssn') != '') {
+            $journalData['issn']  = $context->getData('printIssn');
+        }
+
+        // Volume
+        $volume = $issue->getVolume();
+        if (!empty($volume)) {
+            $journalData['volume'] = (string)$volume;
+        }
+
+        // Issue Number
+        $issueNumber = $issue->getNumber();
+        if (!empty($issueNumber)) {
+            $journalData['issue'] = $issueNumber;
+        }
+
+        // Pages
+        $startPage = $publication->getStartingPage();
+        $endPage = $publication->getEndingPage();
+        if (isset($startPage) && $startPage !== '') {
+            $journalData['pages'] = $startPage . '-' . $endPage;
+        }
+
+        $article['custom_fields'] = ['journal:journal' => $journalData];
+        // End of Journal Metadata
+
         $article['metadata'] = [];
 
-        // Upload and publication type
-        $article['metadata']['upload_type'] = 'publication';
-        $article['metadata']['publication_type'] = 'article';
-
-        // $applicationName = Application::get()->getName(); // ojs2, omp, ops
-        // $publicationType = match ($applicationName) {
-        //     'ojs2' => 'article',
-        //     'omp' => 'book',
-        //     'ops' => 'preprint',
-        // };
-
-        // Publication date
-        if ($publication->getData('datePublished')) {
-            $publicationDate = Carbon::parse($publication->getData('datePublished'));
-        } elseif ($issue->getDatePublished()) {
-            $publicationDate = Carbon::parse($issue->getDatePublished());
-        }
-
-        if ($publicationDate) {
-            $article['metadata']['publication_date'] = $publicationDate->format('Y-m-d');
-        }
+        // Resource type
+        $article['metadata']['resource_type'] = [
+            'id' => 'publication-article',
+        ];
 
         // Article title
         if ($publication->getLocalizedTitle($publicationLocale)) {
             $article['metadata']['title'] = $publication->getLocalizedTitle($publicationLocale);
         }
 
-        // Authors: name, affiliation and ORCID
-        $articleAuthors = $publication->getData('authors');
-        if ($articleAuthors->isNotEmpty()) {
-            $article['metadata']['creators'] = [];
-
-            foreach ($articleAuthors as $articleAuthor) { /** @var Author $author */
-                $author = ['name' => $articleAuthor->getFullName(false, false, $publicationLocale)];
-                $affiliations = $articleAuthor->getLocalizedAffiliationNamesAsString($publicationLocale);
-                if (!empty($affiliations)) {
-                    $author['affiliation'] = $affiliations;
-                }
-                if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
-                    $author['orcid'] = $articleAuthor->getOrcid();
-                }
-                $article['metadata']['creators'][] = $author;
-            }
+        // Authors: name, affiliations and ORCID
+        if ($publication->getData('authors')->isNotEmpty()) {
+            $authorsData = $this->getAuthorsData($publication, $publicationLocale);
+            $article['metadata']['creators'] = $authorsData;
         }
 
         // Abstract
@@ -139,41 +175,33 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['description'] = PKPString::html2text($abstract);
         }
 
-        // Access Rights
-        // Defaults to open, which Zenodo does if not set. Subscription with no OA date is set as closed.
-        $status = 'open';
-        if (
-            $context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION &&
-            $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
-        ) {
-            $status = $issue->getOpenAccessDate() ? 'embargoed' : 'closed';
+        // Publication date
+        if ($publication->getData('datePublished')) {
+            $article['metadata']['publication_date'] = Carbon::parse($publication->getData('datePublished'))->format('Y-m-d');
+        } elseif ($issue->getDatePublished()) {
+            $article['metadata']['publication_date'] = Carbon::parse($issue->getDatePublished())->format('Y-m-d');
         }
 
-        $article['metadata']['access_right'] = $status;
+        // Publisher name
+        if (!empty($context->getData('publisherInstitution'))) {
+            $article['metadata']['publisher'] = $context->getData('publisherInstitution');
+        }
 
-        // License and embargo date
-        if ($status == 'open' || $status == 'embargoed') {
-            $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
-            if (preg_match('/creativecommons\.org\/licenses\/(.*?)\//i', $licenseUrl, $match)) {
-                $article['metadata']['license'] = 'cc-' . $match[1];
+        // References
+        $citationDao = DAORegistry::getDAO('CitationDAO');
+        /** @var CitationDAO $citationDao */
+        $rawCitations = $citationDao->getRawCitationsByPublicationId($publicationId)->toArray();
+        if ($rawCitations) {
+            foreach ($rawCitations as $rawCitation) {
+                $article['metadata']['references'][] = [
+                    'reference' => $rawCitation
+                ];
             }
-            if ($status == 'embargoed') {
-                $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
-                $article['metadata']['embargo_date'] = $openAccessDate->format('Y-m-d');
-            }
         }
 
-        // DOI
-        $doi = $publication->getDoi();
-        if (!empty($doi)) {
-            $article['metadata']['doi'] = $doi;
-        }
-
-        // Keywords
-        $keywords = $publication->getData('keywords', $publicationLocale);
-        if (!empty($keywords)) {
-            $article['metadata']['keywords'] = $keywords;
-        }
+        // Related Identifiers
+        // Schemes: https://inveniordm-dev.docs.cern.ch/reference/metadata/#identifier-schemes
+        // Types: https://github.com/inveniosoftware/invenio-rdm-records/blob/master/invenio_rdm_records/fixtures/data/vocabularies/relation_types.yaml
 
         // FullText URL relation
         $request = Application::get()->getRequest();
@@ -187,102 +215,189 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             urlLocaleForPage: ''
         );
         $article['metadata']['related_identifiers'][] = [
-            'relation' => 'isIdenticalTo',
             'identifier' => $url,
-            'resource_type' => 'publication',
+            'relation_type' => [
+                'id' => 'isidenticalto'
+            ],
+            'scheme' => 'url',
         ];
 
         // Cites relation
         // @todo once structured citations are available add related identifiers using "Cites" relation
-        // @todo "dataset" is also a supported resource type and can be added when data citations are available
         // $article['metadata']['related_identifiers'][] = [
-        //     'relation' => 'cites',
         //     'identifier' => '',
-        //     'resource_type' => 'publication',
+        //     'relation_type' => [
+        //         'id' => 'cites',
+        //     ],
+        //     'scheme' => 'doi',
         // ];
 
         // Version relation
+        // DOI versioning is only supported for Zenodo DOIs
         // $article['metadata']['related_identifiers'][] = [
-        //     'relation' => 'isVersionOf',
-        //     'identifier' => '',
-        //     'resource_type' => 'publication',
+        //     'relation_type' => [
+        //         'id' => 'isVersionOf'
+        //     ],
+        //     'identifier' => '', // DOI
+        //     'scheme' => 'doi',
         // ];
 
-        // References
-        $citationDao = DAORegistry::getDAO('CitationDAO'); /** @var CitationDAO $citationDao */
-        $rawCitations = $citationDao->getRawCitationsByPublicationId($publicationId)->toArray();
-        if ($rawCitations) {
-            $article['metadata']['references'] = $rawCitations;
+        // Other Subjects? @todo
+        // Keywords
+        $keywords = $publication->getData('keywords', $publicationLocale);
+        if (!empty($keywords)) {
+            $keywordsMeta = [];
+            foreach ($keywords as $keyword) {
+                $keywordsMeta[] = [
+                    'subject' => $keyword,
+                ];
+            }
+            $article['metadata']['subjects'] = $keywordsMeta;
         }
 
         // Funding metadata
         $fundingMetadata = $this->fundingMetadata($submissionId);
         if ($fundingMetadata) {
-            $article['metadata']['grants'] = $fundingMetadata;
-        }
-
-        // Journal title
-        $journalTitle = $context->getName($context->getPrimaryLocale());
-        $article['metadata']['journal_title'] = $journalTitle;
-
-        // Volume
-        $volume = $issue->getVolume();
-        if (!empty($volume)) {
-            $article['metadata']['journal_volume'] = (string)$volume;
-        }
-
-        // Issue Number
-        $issueNumber = $issue->getNumber();
-        if (!empty($issueNumber)) {
-            $article['metadata']['journal_issue'] = $issueNumber;
-        }
-
-        // Pages
-        $startPage = $publication->getStartingPage();
-        $endPage = $publication->getEndingPage();
-        if (isset($startPage) && $startPage !== '') {
-            $article['metadata']['journal_pages'] = $startPage . '-' . $endPage;
-        }
-
-        // Publisher name
-        $publisher = $context->getData('publisherInstitution');
-        if (!empty($publisher)) {
-            $article['metadata']['imprint_publisher'] = $publisher;
+            $article['metadata']['funding'] = $fundingMetadata;
         }
 
         // Publication version
-        $version = $publication->getData('version');
-        if ($version) {
-            $article['metadata']['version'] = (string)$version;
+        $versionMajor = (string)$publication->getData('versionMajor');
+        $versionMinor = (string)$publication->getData('versionMinor');
+        if ($versionMajor && $versionMinor) {
+            $article['metadata']['version'] = $versionMajor . '.' . $versionMinor;
         }
 
         // Language (ISO 639-2 or 639-3)
+        // @todo multilingual?
+        // @todo check expected format
         $language = LocaleConversion::get3LetterFrom2LetterIsoLanguage($publicationLocale);
         if ($language) {
-            $article['metadata']['language'] = $language;
+            $article['metadata']['languages'][] = [
+                'id' => $language,
+            ];
+        }
+
+        // Copyright statement
+        if ($publication->getData('copyrightHolder', $publicationLocale) && $publication->getData('copyrightYear')) {
+            $copyrightHolder = $publication->getData('copyrightHolder', $publicationLocale);
+            $copyrightYear = $publication->getData('copyrightYear');
+            $article['metadata']['copyright'] = __('submission.copyrightStatement', [
+                'copyrightHolder' => $copyrightHolder,
+                'copyrightYear' => $copyrightYear
+            ]);
+        };
+
+        // License @todo check for restricted data
+        $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
+        if (preg_match('/creativecommons\.org\/licenses\/(.*?)\/([\d.]+)$/i', $licenseUrl, $match)) {
+            $article['metadata']['rights'][] = [
+                'id' => 'cc-' . $match[1] . '-' . $match[2],
+            ];
         }
 
         // Dates
         // For an exact date, use the same value for both start and end.
-        // Options: Accepted, Available, Collected, Copyrighted, Created,
-        //          Issued, Other, Submitted, Updated, Valid, Withdrawn
+        // Options: accepted, available, collected, copyrighted, created, issued,
+        //          other, submitted, updated, valid, withdrawn.
 
         $editorDecision = Repo::decision()->getCollector()
-            ->filterBySubmissionIds([$publicationId])
+            ->filterBySubmissionIds([$submissionId])
             ->getMany()
             ->first(fn (Decision $decision, $key) => $decision->getData('decision') === Decision::ACCEPT);
 
         if ($editorDecision) {
             $decisionDate = Carbon::parse($editorDecision->getData('dateDecided'));
             $article['metadata']['dates'][] = [
-                "start" => $decisionDate->format('Y-m-d'),
-                "end" => $decisionDate->format('Y-m-d'),
-                "type" => "Accepted",
+                'date' => $decisionDate->format('Y-m-d'),
+                'type' => [
+                    'id' => 'accepted',
+                    'title' => [
+                        'en' => 'Accepted',
+                    ]
+                ],
+                'description' => 'Acceptance date',
             ];
+        }
+
+        // DOI
+        $doi = $publication->getDoi();
+        if (!empty($doi)) {
+            $article['pids'] =
+                [
+                    'doi' => [
+                        'provider' => 'external',
+                        'identifier' => $doi
+                    ],
+                ];
         }
 
         $json = json_encode($article, JSON_UNESCAPED_SLASHES);
         return $json;
+    }
+
+    /*
+     * Helper function for journal metadata
+     */
+    private function getJournalData(Publication $publication): array
+    {
+        //
+        return [];
+    }
+
+    /*
+     * Helper function for authors metadata
+     */
+    private function getAuthorsData(Publication $publication, string $publicationLocale): array
+    {
+        $articleAuthors = $publication->getData('authors');
+        $authorsData = [];
+
+        foreach ($articleAuthors as $articleAuthor) {
+            /** @var Author $author */
+            $author = [];
+
+            if ($articleAuthor->getGivenName($publicationLocale)) {
+                $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
+            }
+
+            if ($articleAuthor->getFamilyName($publicationLocale)) {
+                $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
+            }
+
+            $author['type'] = 'personal';
+
+            if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
+                $author['identifiers'] = [
+                    'identifier' => $articleAuthor->getOrcid(),
+                    'scheme' => 'orcid',
+                ];
+            }
+
+            $affiliations = $articleAuthor->getAffiliations($publicationLocale);
+            if (count($affiliations) > 0) {
+                $affiliationsData = [];
+                foreach ($affiliations as $affiliation) { /** @var Affiliation $affiliation */
+                    if ($affiliation->getRor()) {
+                        $affiliationsData[] = [
+                            'id' => str_replace('https://ror.org/', '', $affiliation->getRor()),
+                            'name' => $affiliation->getAffiliationName($publicationLocale),
+                        ];
+                    } elseif ($affiliation->getAffiliationName($publicationLocale)) {
+                        $affiliationsData[] = [
+                            'name' => $affiliation->getAffiliationName($publicationLocale),
+                        ];
+                    }
+                }
+                $authorsData[] = [
+                    'person_or_org' => $author,
+                    'affiliations' => $affiliationsData
+                ];
+            } else {
+                $authorsData[] = ['person_or_org' => $author];
+            }
+        }
+        return $authorsData;
     }
 
     /*
@@ -313,8 +428,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
                     foreach ($awardIds as $awardId) {
                         if ($plugin->isValidAward($context, $funderRor, $awardId) === true) {
+                            // { @todo
+                            // "award": {"title": {"en": "Blastocystis under One Health"}, "number": "CA21105", "identifiers": [{"identifier": "https://www.cost.eu/actions/CA21105/", "scheme": "url"}]},
+                            // "funder": {"id": "00k4n6c32"}
+                            // },
                             $fundData[] = [
-                                'id' => str_replace('https://doi.org/', '', $funderIdentification) . '::' . $awardId
+                                'award' => [
+                                    $funderRor . '::' . $awardId,
+                                ],
+                                'funder' => [
+                                    'id' => $funderRor,
+                                ]
                             ];
                         }
                     }
