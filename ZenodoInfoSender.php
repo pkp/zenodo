@@ -104,6 +104,7 @@ class ZenodoInfoSender extends ScheduledTask
 
     /**
      * Register objects
+     * @throws Exception
      */
     public function registerObjects(array $objects, string $filter, Journal $journal): void
     {
@@ -125,14 +126,14 @@ class ZenodoInfoSender extends ScheduledTask
      */
     public function addLogEntry(array $errors): void
     {
-        if (is_array($errors)) {
-            foreach ($errors as $error) {
-                assert(is_array($error) && count($error) >= 1);
-                $this->addExecutionLogEntry(
-                    __($error[0], ['param' => $error[1] ?? null]),
-                    ScheduledTaskHelper::SCHEDULED_TASK_MESSAGE_TYPE_WARNING
-                );
-            }
+        foreach ($errors as $error) {
+            if (!is_array($error) || !count($error) > 0) {
+                throw new Exception('Invalid error message');
+            };
+            $this->addExecutionLogEntry(
+                __($error[0], ['param' => $error[1] ?? null]),
+                ScheduledTaskHelper::SCHEDULED_TASK_MESSAGE_TYPE_WARNING
+            );
         }
     }
 }

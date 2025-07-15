@@ -32,14 +32,15 @@ use PKP\galley\Galley;
 use PKP\notification\Notification;
 use PKP\scheduledTask\PKPScheduler;
 
-define('ZENODO_API_OK', 200);
-define('ZENODO_API_DEPOSIT_CREATED', 201);
-define('ZENODO_API_URL', 'https://zenodo.org/api/');
-define('ZENODO_API_URL_DEV', 'https://sandbox.zenodo.org/api/');
-define('ZENODO_API_OPERATION', 'records');
-
 class ZenodoExportPlugin extends PubObjectsExportPlugin
 {
+    public const ZENODO_API_OK = 200;
+    public const ZENODO_API_DEPOSIT_CREATED = 201;
+    public const ZENODO_API_ACCEPTED = 202;
+    public const ZENODO_API_NO_CONTENT = 204;
+    public const ZENODO_API_URL = 'https://zenodo.org/api/';
+    public const ZENODO_API_URL_DEV = 'https://sandbox.zenodo.org/api/';
+    public const ZENODO_API_OPERATION = 'records';
     /**
      * @copydoc Plugin::getName()
      */
@@ -139,14 +140,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $httpClient = Application::get()->getHttpClient();
         $apiKey = $this->getSetting($context->getId(), 'apiKey');
 
-        $url = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL) . ZENODO_API_OPERATION;
-        $mintDoi = $this->mintZenodoDois($context);
+        $url = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL) . self::ZENODO_API_OPERATION;
 
         if ($object->getData($this->getIdSettingName())) {
             // @todo determine if/how to handle cases where zenodo ID exists
             error_log('I already have a zenodo ID');
         }
 
+        $mintDoi = $this->mintZenodoDois($context);
         if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
             return [['plugins.importexport.zenodo.register.error.noDoi']];
         }
@@ -173,7 +174,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $responseBody = json_decode($response->getBody());
         $zenodoRecId = $responseBody->id;
 
-        if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_CREATED) {
+        if (($status = $response->getStatusCode()) != self::ZENODO_API_DEPOSIT_CREATED) {
             return [['plugins.importexport.zenodo.register.error.mdsError', $status . ' - ' . $response->getBody()]];
         }
 
@@ -198,9 +199,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $context = $request->getContext();
         $path = ['plugin', $this->getName()];
         if ($request->getUserVar(PubObjectsExportPlugin::EXPORT_ACTION_DEPOSIT)) {
-            assert($filter != null);
-            // Set filter for JSON
-            $filter = 'article=>zenodo-json';
             $resultErrors = [];
             foreach ($objects as $object) {
                 // Get the JSON
@@ -221,7 +219,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             } else {
                 foreach ($resultErrors as $errors) {
                     foreach ($errors as $error) {
-                        assert(is_array($error) && count($error) >= 1);
+                        if (!is_array($error) || !count($error) > 0) {
+                            throw new Exception('Invalid error message');
+                        };
                         $this->_sendNotification(
                             $request->getUser(),
                             $error[0],
@@ -234,9 +234,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             // redirect back to the right tab
             $request->redirect(null, null, null, $path, null, $tab);
         } elseif ($request->getUserVar(PubObjectsExportPlugin::EXPORT_ACTION_EXPORT)) {
-            assert($filter != null);
-            // Set filter for JSON
-            $filter = 'article=>zenodo-json';
             $items = [];
             foreach ($objects as $object) {
                 // Get the JSON
@@ -262,7 +259,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     {
         $filterDao = DAORegistry::getDAO('FilterDAO'); /** @var FilterDAO $filterDao */
         $exportFilters = $filterDao->getObjectsByGroup($filter);
-        assert(count($exportFilters) == 1); // Assert only a single serialization filter
+        if (count($exportFilters) == 0) {
+            throw new Exception('No export filter found');
+        } elseif (count($exportFilters) > 1) {
+            throw new Exception('Multiple export filters found');
+        }
+
         $exportFilter = array_shift($exportFilters); /** @var ZenodoJsonFilter $exportFilter */
         $exportDeployment = $this->_instantiateExportDeployment($context); /** @var ZenodoExportDeployment $exportDeployment */
         $exportFilter->setDeployment($exportDeployment);
@@ -310,23 +312,19 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /*
-     * Send files to the Zenodo API (see https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file)
+     * Send files to the Zenodo API.
+     * https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file
      */
     protected function depositFiles(Submission $object, int $zenodoRecId, string $url, string $apiKey): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
-        $filesUrl = $url . '/' . $zenodoRecId . '/draft/files';
+        $filesMetadataUrl = $url . '/' . $zenodoRecId . '/draft/files';
         $fileService = Services::get('file');
         $filesDir = Config::getVar('files', 'files_dir');
 
         $metadataHeaders = [
             'Content-Type' => 'application/json',
             'Authorization' => 'Bearer ' . $apiKey,
-        ];
-
-        $fileHeaders = [
-                'Content-Type' => 'Content-Type: application/octet-stream',
-                'Authorization' => 'Bearer ' . $apiKey,
         ];
 
         $publication = $object->getCurrentPublication();
@@ -341,12 +339,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $fileName = $submissionFile->getData('name', $pubLocale);
             $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
 
-            // @todo turn into a single request with multiple files to reduce API calls? see GuzzleHttp\Pool
             // Initialize the file upload
             try {
-                $response = $httpClient->request(
+                $filesMetadataResponse = $httpClient->request(
                     'POST',
-                    $filesUrl,
+                    $filesMetadataUrl,
                     [
                         'headers' => $metadataHeaders,
                         'json' => [
@@ -360,11 +357,21 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
             }
 
+            if ($filesMetadataResponse->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
+                $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
+                return [['plugins.importexport.zenodo.register.error.fileError', $filesMetadataResponse->getStatusCode() . ' - ' . $filesMetadataResponse->getBody()]];
+            }
+
             // Upload the file contents
+            $filesFileUrl = $url . '/' . $zenodoRecId . '/draft/files/' . $fileName . '/content';
+            $fileHeaders = [
+                'Content-Type' => 'application/octet-stream',
+                'Authorization' => 'Bearer ' . $apiKey,
+            ];
             try {
-                $response = $httpClient->request(
-                    'POST',
-                    $filesUrl,
+                $filesResponse = $httpClient->request(
+                    'PUT',
+                    $filesFileUrl,
                     [
                         'headers' => $fileHeaders,
                         'body' => Psr7\Utils::tryFopen($filePath, 'r')
@@ -374,11 +381,65 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
             }
 
-            //@todo fix for two calls
-            if (($status = $response->getStatusCode()) != ZENODO_API_DEPOSIT_CREATED) {
-                return [['plugins.importexport.zenodo.register.error.fileError', $status . ' - ' . $response->getBody()]];
+            if ($filesResponse->getStatusCode() != self::ZENODO_API_OK) {
+                $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
+                return [['plugins.importexport.zenodo.register.error.fileError', $filesResponse->getStatusCode() . ' - ' . $filesResponse->getBody()]];
+            }
+
+            // Commit the file upload
+            $filesCommitUrl = $url . '/' . $zenodoRecId . '/draft/files/' . $fileName . '/commit';
+            $commitHeaders = [
+                'Authorization' => 'Bearer ' . $apiKey,
+            ];
+
+            try {
+                $commitResponse = $httpClient->request(
+                    'POST',
+                    $filesCommitUrl,
+                    [
+                        'headers' => $commitHeaders,
+                    ],
+                );
+            } catch (GuzzleException | Exception $e) {
+                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+            }
+
+            if ($commitResponse->getStatusCode() != self::ZENODO_API_OK) {
+                $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
+                return [['plugins.importexport.zenodo.register.error.fileError', $commitResponse->getStatusCode() . ' - ' . $commitResponse->getBody()]];
             }
         }
+        return true;
+    }
+
+    /*
+     * Delete a file from a Zenodo record.
+     * https://inveniordm-dev.docs.cern.ch/reference/rest_api_drafts_records/#delete-a-draft-file
+     */
+    protected function deleteFile(int $zenodoRecId, string $url, string $fileName, string $apiKey): bool|array
+    {
+        $httpClient = Application::get()->getHttpClient();
+        $deleteFileUrl = $url . '/' . $zenodoRecId . '/draft/files/' . $fileName;
+        $deleteFileHeaders = [
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $deleteFileResponse = $httpClient->request(
+                'DELETE',
+                $deleteFileUrl,
+                [
+                    'headers' => $deleteFileHeaders,
+                ],
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+        }
+
+        if ($deleteFileResponse->getStatusCode() != self::ZENODO_API_NO_CONTENT) {
+            return [['plugins.importexport.zenodo.register.error.fileError', $deleteFileResponse->getStatusCode() . ' - ' . $deleteFileResponse->getBody()]];
+        }
+
         return true;
     }
 
@@ -389,7 +450,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     {
         $scheduler
             ->addSchedule(new ZenodoInfoSender())
-            ->everyMinute()
+            ->daily()
             ->name(ZenodoInfoSender::class)
             ->withoutOverlapping();
     }
@@ -402,7 +463,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      */
     public function isValidAward(Context $context, string $funderRor, string $award): bool|array
     {
-        $apiUrl = ($this->isTestMode($context) ? ZENODO_API_URL_DEV : ZENODO_API_URL);
+        $apiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $awardsUrl = $apiUrl . 'awards/' . $funderRor . '::' . $award;
         $httpClient = Application::get()->getHttpClient();
 
@@ -411,7 +472,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody(), true);
 
-            if ($statusCode === ZENODO_API_OK && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
+            if ($statusCode === self::ZENODO_API_OK && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
                 return true;
             } else {
                 return false;

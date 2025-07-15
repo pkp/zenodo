@@ -13,6 +13,6 @@
 <version>
 	<application>zenodo</application>
 	<type>plugins.importexport</type>
-	<release>0.0.0.1</release>
-	<date>2025-02-05</date>
+	<release>1.0.0.0</release>
+	<date>2025-07-08</date>
 </version>
