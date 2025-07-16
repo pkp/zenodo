@@ -38,6 +38,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public const ZENODO_API_DEPOSIT_CREATED = 201;
     public const ZENODO_API_ACCEPTED = 202;
     public const ZENODO_API_NO_CONTENT = 204;
+    public const ZENODO_API_NOT_FOUND = 404;
     public const ZENODO_API_URL = 'https://zenodo.org/api/';
     public const ZENODO_API_URL_DEV = 'https://sandbox.zenodo.org/api/';
     public const ZENODO_API_OPERATION = 'records';
@@ -103,7 +104,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public function getExportActions($context): array
     {
         $actions = [PubObjectsExportPlugin::EXPORT_ACTION_EXPORT, PubObjectsExportPlugin::EXPORT_ACTION_MARKREGISTERED];
-        if ($this->getSetting($context->getId(), 'apiKey')) {
+        if ($this->getApiKey($context)) {
             array_unshift($actions, PubObjectsExportPlugin::EXPORT_ACTION_DEPOSIT);
         }
         return $actions;
@@ -138,13 +139,17 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public function depositXML($object, $context, $jsonString): bool|array /* @todo rename? */
     {
         $httpClient = Application::get()->getHttpClient();
-        $apiKey = $this->getSetting($context->getId(), 'apiKey');
+        $apiKey = $this->getApiKey($context);
+        if (!$apiKey) {
+            return [['plugins.importexport.zenodo.register.error.noApiKey']];
+        }
 
         $url = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL) . self::ZENODO_API_OPERATION;
 
         if ($object->getData($this->getIdSettingName())) {
             // @todo determine if/how to handle cases where zenodo ID exists
             error_log('I already have a zenodo ID');
+            $isPublished = $this->isRecordPublished($object->getData($this->getIdSettingName()), $url); // @todo
         }
 
         $mintDoi = $this->mintZenodoDois($context);
@@ -174,12 +179,26 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $responseBody = json_decode($response->getBody());
         $zenodoRecId = $responseBody->id;
 
-        if (($status = $response->getStatusCode()) != self::ZENODO_API_DEPOSIT_CREATED) {
-            return [['plugins.importexport.zenodo.register.error.mdsError', $status . ' - ' . $response->getBody()]];
+        if ($response->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
+            return [['plugins.importexport.zenodo.register.error.mdsError', $response->getStatusCode() . ' - ' . $response->getBody()]];
         }
 
-        // if the submission has files
-        $this->depositFiles($object, $zenodoRecId, $url, $apiKey);
+        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $url, $apiKey);
+        if (is_array($filesDeposit)) {
+            // @todo delete draft record in Zenodo as well?
+            return $filesDeposit;
+        }
+
+        $autoPublish = $this->automaticPublishing($context);
+        if ($autoPublish) {
+            $published = $this->publishZenodoRecord($zenodoRecId, $url, $apiKey);
+            if (is_array($published)) {
+                // @todo custom error message? e.g draft was created but publishing failed
+                return $published;
+            }
+        }
+
+        $community = $this->zenodoCommunity($context); // @todo
 
         // Deposit was received; set the status
         $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
@@ -277,6 +296,22 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public function mintZenodoDois(Context $context): bool
     {
         return ($this->getSetting($context->getId(), 'mintDoi') == 1);
+    }
+
+    /**
+     * Get the Zenodo API key setting value.
+     */
+    public function getApiKey(Context $context): string|false
+    {
+        return $this->getSetting($context->getId(), 'apiKey') ?? false;
+    }
+
+    /**
+     * Get the Zenodo community that records should be submitted to.
+     */
+    public function zenodoCommunity(Context $context): string|false
+    {
+        return $this->getSetting($context->getId(), 'community') ?? false;
     }
 
     /**
@@ -478,7 +513,65 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 return false;
             }
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.register.error.awardError', $e->getMessage()]];
         }
+    }
+
+    /*
+     * Publish a Zenodo record.
+     */
+    public function publishZenodoRecord(int $zenodoRecId, string $url, string $apiKey): string|array
+    {
+        $httpClient = Application::get()->getHttpClient();
+        $publishUrl = $url . '/' . $zenodoRecId . '/draft/actions/publish';
+
+        $publishHeaders = [
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $publishResponse = $httpClient->request(
+                'POST',
+                $publishUrl,
+                [
+                    'headers' => $publishHeaders,
+                ]
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.register.error.publishError', $e->getMessage()]];
+        }
+
+        if ($publishResponse->getStatusCode() != self::ZENODO_API_ACCEPTED) {
+            return [['plugins.importexport.zenodo.register.error.publishError', $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()]];
+        }
+
+        return true;
+    }
+
+    /*
+     * Check if a Zenodo record has been published.
+     */
+    public function isRecordPublished(int $zenodoRecId, string $url): bool|array
+    {
+        $recordUrl = $url . '/' . $zenodoRecId . '/';
+        $httpClient = Application::get()->getHttpClient();
+
+        try {
+            $response = $httpClient->request(
+                'GET',
+                $recordUrl
+            );
+
+            if ($response->getStatusCode() === self::ZENODO_API_OK) {
+                return true;
+            }
+        } catch (GuzzleException | Exception $e) {
+            if ($e->getCode() === self::ZENODO_API_NOT_FOUND) {
+                return false;
+            } else {
+                return [['plugins.importexport.zenodo.register.error.publishCheckError', $e->getMessage()]];
+            }
+        }
+        return false;
     }
 }
