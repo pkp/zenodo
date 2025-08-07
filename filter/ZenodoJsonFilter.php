@@ -428,13 +428,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
                     foreach ($awardIds as $awardId) {
                         if ($plugin->isValidAward($context, $funderRor, $awardId) === true) {
-                            // { @todo
-                            // "award": {"title": {"en": "Blastocystis under One Health"}, "number": "CA21105", "identifiers": [{"identifier": "https://www.cost.eu/actions/CA21105/", "scheme": "url"}]},
-                            // "funder": {"id": "00k4n6c32"}
-                            // },
+                            // @todo look into COST Action from example
                             $fundData[] = [
                                 'award' => [
-                                    $funderRor . '::' . $awardId,
+                                    'id' => $funderRor . '::' . $awardId,
                                 ],
                                 'funder' => [
                                     'id' => $funderRor,
