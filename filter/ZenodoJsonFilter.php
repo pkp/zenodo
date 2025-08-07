@@ -268,10 +268,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['version'] = $versionMajor . '.' . $versionMinor;
         }
 
-        // Language (ISO 639-2 or 639-3)
+        // Language (ISO 639-3)
         // @todo multilingual?
         // @todo check expected format
-        $language = LocaleConversion::get3LetterFrom2LetterIsoLanguage($publicationLocale);
+        $language = LocaleConversion::getIso3FromLocale($publicationLocale);
         if ($language) {
             $article['metadata']['languages'][] = [
                 'id' => $language,
