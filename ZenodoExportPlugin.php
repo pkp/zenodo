@@ -144,7 +144,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
-        $url = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL) . self::ZENODO_API_OPERATION;
+        $baseUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
+        $recordsUrl = $baseUrl . self::ZENODO_API_OPERATION;
 
         if ($object->getData($this->getIdSettingName())) {
             // @todo determine if/how to handle cases where zenodo ID exists
@@ -166,24 +167,24 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         try {
             $response = $httpClient->request(
                 'POST',
-                $url,
+                $recordsUrl,
                 [
                     'headers' => $headers,
                     'json' => json_decode($jsonString),
                 ]
             );
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.api.error.mdsError', $e->getMessage()]];
         }
 
         $responseBody = json_decode($response->getBody());
         $zenodoRecId = $responseBody->id;
 
         if ($response->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
-            return [['plugins.importexport.zenodo.register.error.mdsError', $response->getStatusCode() . ' - ' . $response->getBody()]];
+            return [['plugins.importexport.zenodo.api.error.mdsError', $response->getStatusCode() . ' - ' . $response->getBody()]];
         }
 
-        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $url, $apiKey);
+        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $recordsUrl, $apiKey);
         if (is_array($filesDeposit)) {
             // @todo delete draft record in Zenodo as well?
             return $filesDeposit;
@@ -191,7 +192,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
 
         $autoPublish = $this->automaticPublishing($context);
         if ($autoPublish) {
-            $published = $this->publishZenodoRecord($zenodoRecId, $url, $apiKey);
+            $published = $this->publishZenodoRecord($zenodoRecId, $recordsUrl, $apiKey);
             if (is_array($published)) {
                 // @todo custom error message? e.g draft was created but publishing failed
                 return $published;
@@ -389,12 +390,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                     ],
                 );
             } catch (GuzzleException | Exception $e) {
-                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
 
             if ($filesMetadataResponse->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
                 $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.register.error.fileError', $filesMetadataResponse->getStatusCode() . ' - ' . $filesMetadataResponse->getBody()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $filesMetadataResponse->getStatusCode() . ' - ' . $filesMetadataResponse->getBody()]];
             }
 
             // Upload the file contents
@@ -413,12 +414,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                     ],
                 );
             } catch (GuzzleException | Exception $e) {
-                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
 
             if ($filesResponse->getStatusCode() != self::ZENODO_API_OK) {
                 $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.register.error.fileError', $filesResponse->getStatusCode() . ' - ' . $filesResponse->getBody()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $filesResponse->getStatusCode() . ' - ' . $filesResponse->getBody()]];
             }
 
             // Commit the file upload
@@ -436,12 +437,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                     ],
                 );
             } catch (GuzzleException | Exception $e) {
-                return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
 
             if ($commitResponse->getStatusCode() != self::ZENODO_API_OK) {
                 $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.register.error.fileError', $commitResponse->getStatusCode() . ' - ' . $commitResponse->getBody()]];
+                return [['plugins.importexport.zenodo.api.error.fileError', $commitResponse->getStatusCode() . ' - ' . $commitResponse->getBody()]];
             }
         }
         return true;
@@ -468,11 +469,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 ],
             );
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.fileError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
         }
 
         if ($deleteFileResponse->getStatusCode() != self::ZENODO_API_NO_CONTENT) {
-            return [['plugins.importexport.zenodo.register.error.fileError', $deleteFileResponse->getStatusCode() . ' - ' . $deleteFileResponse->getBody()]];
+            return [['plugins.importexport.zenodo.api.error.fileError', $deleteFileResponse->getStatusCode() . ' - ' . $deleteFileResponse->getBody()]];
         }
 
         return true;
@@ -507,13 +508,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody(), true);
 
-            if ($statusCode === self::ZENODO_API_OK && !empty($body['id']) && $body['id'] == $funderRor . '::' . $award) {
+            if (
+                $statusCode === self::ZENODO_API_OK && !empty($body['id'])
+                && $body['id'] == $funderRor . '::' . $award
+            ) {
                 return true;
             } else {
                 return false;
             }
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.awardError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.api.error.awardError', $e->getMessage()]];
         }
     }
 
@@ -538,11 +542,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 ]
             );
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.register.error.publishError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.api.error.publishError', $e->getMessage()]];
         }
 
         if ($publishResponse->getStatusCode() != self::ZENODO_API_ACCEPTED) {
-            return [['plugins.importexport.zenodo.register.error.publishError', $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()]];
+            return [['plugins.importexport.zenodo.api.error.publishError', $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()]];
         }
 
         return true;
@@ -569,7 +573,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             if ($e->getCode() === self::ZENODO_API_NOT_FOUND) {
                 return false;
             } else {
-                return [['plugins.importexport.zenodo.register.error.publishCheckError', $e->getMessage()]];
+                return [['plugins.importexport.zenodo.api.error.publishCheckError', $e->getMessage()]];
+            }
+        }
+        return false;
+    }
             }
         }
         return false;

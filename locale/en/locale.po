@@ -15,7 +15,7 @@ msgid "plugins.importexport.zenodo.displayName"
 msgstr "Zenodo Export Plugin"
 
 msgid "plugins.importexport.zenodo.description"
-msgstr "Export journal articles to Zenodo. Articles will be created as a draft in Zenodo."
+msgstr "Export journal articles to Zenodo."
 
 msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account."
@@ -66,19 +66,28 @@ msgstr "No Zenodo API Key was found. Please set the API key and try again."
 msgid "plugins.importexport.zenodo.register.error.mdsError"
 msgstr "Deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
-msgid "plugins.importexport.zenodo.register.error.fileError"
+msgid "plugins.importexport.zenodo.api.error.fileError"
 msgstr "File deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
-msgid "plugins.importexport.zenodo.register.error.awardError"
+msgid "plugins.importexport.zenodo.api.error.awardError"
 msgstr "The award validation check was not successful! The Zenodo API returned an error: '{$param}'."
 
-msgid "plugins.importexport.zenodo.register.error.publishError"
+msgid "plugins.importexport.zenodo.api.error.publishError"
 msgstr "Publishing was not successful! The Zenodo API returned an error: '{$param}'."
 
-msgid "plugins.importexport.zenodo.register.error.publishCheckError"
+msgid "plugins.importexport.zenodo.api.error.publishCheckError"
 msgstr "The record publish check was not successful! The Zenodo API returned an error: '{$param}'."
 
-msgid "plugins.importexport.zenodo.register.error.noDoi"
+msgid "plugins.importexport.zenodo.api.error.createReviewError"
+msgstr "Creating the review request was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.submitReviewError"
+msgstr "Submitting the review request was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.acceptReviewError"
+msgstr "Accepting the review request was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.noDoi"
 msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
 
 msgid "plugins.importexport.zenodo.cliUsage"
