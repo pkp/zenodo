@@ -31,6 +31,7 @@ use Exception;
 use Illuminate\Support\Facades\DB;
 use PKP\affiliation\Affiliation;
 use PKP\citation\CitationDAO;
+use PKP\context\Context;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
 use PKP\filter\FilterGroup;
@@ -113,43 +114,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['access']['embargo']['until'] = $openAccessDate->format('Y-m-d');
         }
 
-        // Journal Metadata @todo move to function?
-        $journalData = [];
-
-        // Journal title
-        $journalTitle = $context->getName($context->getPrimaryLocale());
-        $journalData['title'] = $journalTitle;
-
-        // ISSN
-        if ($context->getData('onlineIssn') != '') {
-            $journalData['issn'] = $context->getData('onlineIssn');
-        } elseif ($context->getData('issn') != '') {
-            $journalData['issn']  = $context->getData('issn');
-        } elseif ($context->getData('printIssn') != '') {
-            $journalData['issn']  = $context->getData('printIssn');
-        }
-
-        // Volume
-        $volume = $issue->getVolume();
-        if (!empty($volume)) {
-            $journalData['volume'] = (string)$volume;
-        }
-
-        // Issue Number
-        $issueNumber = $issue->getNumber();
-        if (!empty($issueNumber)) {
-            $journalData['issue'] = $issueNumber;
-        }
-
-        // Pages
-        $startPage = $publication->getStartingPage();
-        $endPage = $publication->getEndingPage();
-        if (isset($startPage) && $startPage !== '') {
-            $journalData['pages'] = $startPage . '-' . $endPage;
-        }
-
+        // Journal Metadata
+        $journalData = $this->getJournalData($context, $publication, $issue);
         $article['custom_fields'] = ['journal:journal' => $journalData];
-        // End of Journal Metadata
 
         $article['metadata'] = [];
 
@@ -339,10 +306,45 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /*
      * Helper function for journal metadata
      */
-    private function getJournalData(Publication $publication): array
+    private function getJournalData(Context $context, Publication $publication, ?Issue $issue): array
     {
-        //
-        return [];
+        $journalData = [];
+
+        // Journal title
+        $journalTitle = $context->getName($context->getPrimaryLocale());
+        $journalData['title'] = $journalTitle;
+
+        // ISSN
+        if ($context->getData('onlineIssn') != '') {
+            $journalData['issn'] = $context->getData('onlineIssn');
+        } elseif ($context->getData('issn') != '') {
+            $journalData['issn']  = $context->getData('issn');
+        } elseif ($context->getData('printIssn') != '') {
+            $journalData['issn']  = $context->getData('printIssn');
+        }
+
+        if ($issue) {
+            // Volume
+            $volume = $issue->getVolume();
+            if (!empty($volume)) {
+                $journalData['volume'] = (string)$volume;
+            }
+
+            // Issue Number
+            $issueNumber = $issue->getNumber();
+            if (!empty($issueNumber)) {
+                $journalData['issue'] = $issueNumber;
+            }
+        }
+
+        // Pages
+        $startPage = $publication->getStartingPage();
+        $endPage = $publication->getEndingPage();
+        if (isset($startPage) && $startPage !== '') {
+            $journalData['pages'] = $startPage . '-' . $endPage;
+        }
+
+        return $journalData;
     }
 
     /*
