@@ -190,16 +190,36 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             return $filesDeposit;
         }
 
+        // Submit the record to a community
+        $communityId = $this->getCommunityId($context);
+        if ($communityId) {
+            if ($review = $this->createReview($zenodoRecId, $communityId, $recordsUrl, $apiKey)) {
+                // @todo depending on the community permissions, this can automatically publish the record - make sure this is clear to the user.
+                $requestId = $this->submitReview($zenodoRecId, $baseUrl, $apiKey);
+                $autoPublishCommunity = $this->automaticPublishingCommunity($context);
+                if (is_array($requestId)) {
+                    return $requestId;
+                } elseif ($autoPublishCommunity && $requestId) {
+                    // @todo handle errors - if this fails, delete the review request?
+                    $reviewAccepted = $this->acceptReview($requestId, $recordsUrl, $apiKey);
+                }
+            } elseif (is_array($review)) {
+                return $review;
+            };
+        }
+
+        // @todo consider how to handle this alongside auto publishing in community
+        // (e.g. record may be published already)
         $autoPublish = $this->automaticPublishing($context);
         if ($autoPublish) {
             $published = $this->publishZenodoRecord($zenodoRecId, $recordsUrl, $apiKey);
             if (is_array($published)) {
                 // @todo custom error message? e.g draft was created but publishing failed
+                // in this case there is still a draft - delete it then return the error
+                $this->deleteRecord($zenodoRecId, $recordsUrl, $apiKey);
                 return $published;
             }
         }
-
-        $community = $this->zenodoCommunity($context); // @todo
 
         // Deposit was received; set the status
         $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
@@ -310,9 +330,25 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     /**
      * Get the Zenodo community that records should be submitted to.
      */
-    public function zenodoCommunity(Context $context): string|false
+    public function getCommunity(Context $context): string|false
     {
         return $this->getSetting($context->getId(), 'community') ?? false;
+    }
+
+    /**
+     * Get the Zenodo community ID that records should be submitted to.
+     */
+    public function getCommunityId(Context $context): string|false
+    {
+        return $this->getSetting($context->getId(), 'communityId') ?? false;
+    }
+
+    /**
+     * Check whether we will try to automatically publish Zenodo records to a community.
+     */
+    public function automaticPublishingCommunity(Context $context): bool
+    {
+        return $this->getSetting($context->getId(), 'automaticPublishingCommunity') ?? false;
     }
 
     /**
@@ -578,8 +614,128 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         }
         return false;
     }
-            }
+
+    /*
+     * Create a review request for a Zenodo record.
+     * https://inveniordm.docs.cern.ch/reference/rest_api_reviews/#createupdate-a-review-request
+     */
+    public function createReview(int $zenodoRecId, string $communityName, string $url, string $apiKey): bool|array
+    {
+        $communityUrl = $url . '/' . $zenodoRecId . '/draft/review';
+        $httpClient = Application::get()->getHttpClient();
+
+        $communityHeaders = [
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $createReviewResponse = $httpClient->request(
+                'PUT',
+                $communityUrl,
+                [
+                    'headers' => $communityHeaders,
+                    'json' => [
+                        'receiver' => [
+                            'community' => $communityName,
+                        ],
+                        'type' => 'community-submission'
+                    ]
+                ]
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.api.error.createReviewError', $e->getMessage()]];
         }
-        return false;
+
+        if ($createReviewResponse->getStatusCode() != self::ZENODO_API_OK) {
+            return [[
+                'plugins.importexport.zenodo.api.error.createReviewError',
+                $createReviewResponse->getStatusCode() . ' - ' . $createReviewResponse->getBody()
+            ]];
+        }
+        return true;
+    }
+
+    /*
+     * Submit a review request to a community.
+     * Depending on the community's submission policy settings, the record may also be published.
+     */
+    public function submitReview(int $zenodoRecId, string $url, string $apiKey): bool|array|string
+    {
+        $submitUrl = $url . self::ZENODO_API_OPERATION . '/' . $zenodoRecId . '/draft/actions/submit-review';
+        $httpClient = Application::get()->getHttpClient();
+
+        $submitHeaders = [
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $submitReviewResponse = $httpClient->request(
+                'POST',
+                $submitUrl,
+                [
+                    'headers' => $submitHeaders,
+                    'json' => [
+                        'payload' => [
+                            'content' => 'This request was submitted from the OJS Zenodo plugin.',
+                            'format' => 'html'
+                        ],
+                    ]
+                ]
+            );
+            $body = json_decode($submitReviewResponse->getBody(), true);
+            $requestId = $body['id'];
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.api.error.submitReviewError', $e->getMessage()]];
+        }
+
+        if ($submitReviewResponse->getStatusCode() != self::ZENODO_API_ACCEPTED) {
+            return [[
+                'plugins.importexport.zenodo.api.error.submitReviewError',
+                $submitReviewResponse->getStatusCode() . ' - ' . $submitReviewResponse->getBody()
+            ]];
+        }
+        return $requestId;
+    }
+
+    /*
+     * Accept a review request to a community. This will also publish the record.
+     */
+    public function acceptReview(string $requestId, string $url, string $apiKey): bool|array
+    {
+        $acceptUrl = $url . 'requests/' . $requestId . '/actions/accept';
+        $httpClient = Application::get()->getHttpClient();
+
+        $acceptHeaders = [
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $acceptReviewResponse = $httpClient->request(
+                'POST',
+                $acceptUrl,
+                [
+                    'headers' => $acceptHeaders,
+                    'json' => [
+                        'payload' => [
+                            'content' => 'This request was accepted from the OJS Zenodo plugin.',
+                            'format' => 'html'
+                        ],
+                    ]
+                ]
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.api.error.acceptReviewError', $e->getMessage()]];
+        }
+
+        if ($acceptReviewResponse->getStatusCode() != self::ZENODO_API_OK) {
+            return [[
+                'plugins.importexport.zenodo.api.error.publishCheckError',
+                $acceptReviewResponse->getStatusCode() . ' - ' .  $acceptReviewResponse->getBody()
+            ]];
+        }
+        return true;
     }
 }

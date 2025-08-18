@@ -25,13 +25,6 @@
 				{fbvElement type="text" id="apiKey" value=$apiKey label="plugins.importexport.zenodo.settings.form.apiKey" maxlength="100" size=$fbvStyles.size.MEDIUM}
 				<br/>
 			{/fbvFormSection}
-			{fbvFormSection}
-				<p class="help">
-					{translate key="plugins.importexport.zenodo.settings.form.community.description"}
-				</p>
-				{fbvElement type="text" id="community" value=$community label="plugins.importexport.zenodo.settings.form.community" maxlength="100" size=$fbvStyles.size.MEDIUM}
-				<br/>
-			{/fbvFormSection}
 			{fbvFormSection list="true"}
 				{fbvElement type="checkbox" id="automaticRegistration" label="plugins.importexport.zenodo.settings.form.automaticRegistration.description" checked=$automaticRegistration|compare:true}
 			{/fbvFormSection}
@@ -43,6 +36,18 @@
 			{/fbvFormSection}
 			{fbvFormSection list="true"}
 				{fbvElement type="checkbox" id="testMode" label="plugins.importexport.zenodo.settings.form.testMode.description" checked=$testMode|compare:true}
+			{/fbvFormSection}
+		{/fbvFormArea}
+		{fbvFormArea id="zenodoCommunitySettingsFormArea"}
+			{fbvFormSection}
+				<p class="help">
+					{translate key="plugins.importexport.zenodo.settings.form.community.description"}
+				</p>
+				{fbvElement type="text" id="community" value=$community label="plugins.importexport.zenodo.settings.form.community" maxlength="100" size=$fbvStyles.size.MEDIUM}
+				<br/>
+			{/fbvFormSection}
+			{fbvFormSection list="true"}
+				{fbvElement type="checkbox" id="automaticPublishingCommunity" label="plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.description" checked=$automaticPublishingCommunity|compare:true}
 			{/fbvFormSection}
 		{/fbvFormArea}
 		{fbvFormButtons submitText="common.save"}

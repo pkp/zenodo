@@ -138,11 +138,12 @@ class ZenodoSettingsForm extends Form
     {
         return [
             'apiKey' => 'string',
-            'community' => 'string',
-            'automaticRegistration' => 'bool',
             'automaticPublishing' => 'bool',
-            'testMode' => 'bool',
+            'automaticPublishingCommunity' => 'bool',
+            'automaticRegistration' => 'bool',
+            'community' => 'string',
             'mintDoi' => 'bool',
+            'testMode' => 'bool',
         ];
     }
 
@@ -153,9 +154,10 @@ class ZenodoSettingsForm extends Form
     {
         return in_array($settingName, [
             'apiKey',
-            'community',
-            'automaticRegistration',
             'automaticPublishing',
+            'automaticPublishingCommunity',
+            'automaticRegistration',
+            'community',
             'testMode',
             'mintDoi'
         ]);

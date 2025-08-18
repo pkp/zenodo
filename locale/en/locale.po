@@ -32,7 +32,16 @@ msgid "plugins.importexport.zenodo.settings.form.community"
 msgstr "Zenodo Community"
 
 msgid "plugins.importexport.zenodo.settings.form.community.description"
-msgstr "The Zenodo community to submit records to."
+msgstr ""
+"The Zenodo community to submit records to. Please enter the community's unique identifier; "
+" for example, to submit to the community <a href=\"https://zenodo.org/community/eu\">https://zenodo.org/community/eu</a>, enter 'eu'."
+
+msgid "plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.description"
+msgstr ""
+"<strong>Accept Community Reviews</strong>: Automatically accept review requests to this Zenodo community. "
+"This will only apply to communities which require submissions to be reviewed. "
+"Only enable this setting if you have permissions in Zenodo to publish records in this community. This will also publish the record, "
+"and can not be deleted once published."
 
 msgid "plugins.importexport.zenodo.settings.form.automaticRegistration.description"
 msgstr ""
