@@ -94,12 +94,15 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Access Rights
         $status = 'open';
         $access = 'public';
-        if (
-            $context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION &&
-            $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
-        ) {
-            $status = $issue->getOpenAccessDate() ? 'embargoed' : 'metadata-only';
-            $access = $issue->getOpenAccessDate() ? 'restricted' : 'public';
+
+        if ($issue) {
+            if (
+                $context->getData('publishingMode') == Journal::PUBLISHING_MODE_SUBSCRIPTION &&
+                $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
+            ) {
+                $status = $issue->getOpenAccessDate() ? 'embargoed' : 'metadata-only';
+                $access = $issue->getOpenAccessDate() ? 'restricted' : 'public';
+            }
         }
 
         $article['access'] = [
@@ -108,7 +111,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'status' => $status,
         ];
 
-        if ($status == 'embargoed') { // @todo test this
+        if ($issue && $status == 'embargoed') { // @todo test this
             $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
             $article['access']['embargo']['active'] = 'true';
             $article['access']['embargo']['until'] = $openAccessDate->format('Y-m-d');
@@ -223,6 +226,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Funding metadata
+        // @todo re-test if validation of award and conversion to ROR is needed in new API
         $fundingMetadata = $this->fundingMetadata($submissionId);
         if ($fundingMetadata) {
             $article['metadata']['funding'] = $fundingMetadata;
@@ -236,8 +240,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Language (ISO 639-3)
-        // @todo multilingual?
-        // @todo check expected format
+        // @todo multilingual? e.g. what if galleys are in multiple languages?
         $language = LocaleConversion::getIso3FromLocale($publicationLocale);
         if ($language) {
             $article['metadata']['languages'][] = [
@@ -306,7 +309,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /*
      * Helper function for journal metadata
      */
-    private function getJournalData(Context $context, Publication $publication, ?Issue $issue): array
+    private function getJournalData(Context $context, Publication $publication, ?Issue $issue = null): array
     {
         $journalData = [];
 

@@ -84,6 +84,12 @@ msgstr "Retrieving the community ID was not successful! The Zenodo API returned 
 msgid "plugins.importexport.zenodo.api.error.fileError"
 msgstr "File deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
+msgid "plugins.importexport.zenodo.api.error.fileDeleteError"
+msgstr "Deleting the file in Zenodo was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.recordDeleteError"
+msgstr "Deleting the draft record in Zenodo was not successful! The Zenodo API returned an error: '{$param}'."
+
 msgid "plugins.importexport.zenodo.api.error.awardError"
 msgstr "The award validation check was not successful! The Zenodo API returned an error: '{$param}'."
 

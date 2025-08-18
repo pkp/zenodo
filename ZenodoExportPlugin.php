@@ -42,6 +42,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     public const ZENODO_API_URL = 'https://zenodo.org/api/';
     public const ZENODO_API_URL_DEV = 'https://sandbox.zenodo.org/api/';
     public const ZENODO_API_OPERATION = 'records';
+
     /**
      * @copydoc Plugin::getName()
      */
@@ -136,7 +137,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      * @see PubObjectsExportPlugin::depositXML()
      *
      */
-    public function depositXML($object, $context, $jsonString): bool|array /* @todo rename? */
+    public function depositXML($object, $context, $jsonString): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
         $apiKey = $this->getApiKey($context);
@@ -181,12 +182,15 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $zenodoRecId = $responseBody->id;
 
         if ($response->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
-            return [['plugins.importexport.zenodo.api.error.mdsError', $response->getStatusCode() . ' - ' . $response->getBody()]];
+            return [[
+                'plugins.importexport.zenodo.api.error.mdsError',
+                $response->getStatusCode() . ' - ' . $response->getBody()
+            ]];
         }
 
         $filesDeposit = $this->depositFiles($object, $zenodoRecId, $recordsUrl, $apiKey);
         if (is_array($filesDeposit)) {
-            // @todo delete draft record in Zenodo as well?
+            $this->deleteRecord($zenodoRecId, $recordsUrl, $apiKey);
             return $filesDeposit;
         }
 
@@ -430,8 +434,10 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             }
 
             if ($filesMetadataResponse->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
-                $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.api.error.fileError', $filesMetadataResponse->getStatusCode() . ' - ' . $filesMetadataResponse->getBody()]];
+                return [[
+                    'plugins.importexport.zenodo.api.error.fileError',
+                    $filesMetadataResponse->getStatusCode() . ' - ' . $filesMetadataResponse->getBody()
+                ]];
             }
 
             // Upload the file contents
@@ -455,7 +461,10 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
 
             if ($filesResponse->getStatusCode() != self::ZENODO_API_OK) {
                 $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.api.error.fileError', $filesResponse->getStatusCode() . ' - ' . $filesResponse->getBody()]];
+                return [[
+                    'plugins.importexport.zenodo.api.error.fileError',
+                    $filesResponse->getStatusCode() . ' - ' . $filesResponse->getBody()
+                ]];
             }
 
             // Commit the file upload
@@ -473,12 +482,18 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                     ],
                 );
             } catch (GuzzleException | Exception $e) {
-                return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
+                return [[
+                    'plugins.importexport.zenodo.api.error.fileError',
+                    $e->getMessage()
+                ]];
             }
 
             if ($commitResponse->getStatusCode() != self::ZENODO_API_OK) {
                 $this->deleteFile($zenodoRecId, $url, $fileName, $apiKey);
-                return [['plugins.importexport.zenodo.api.error.fileError', $commitResponse->getStatusCode() . ' - ' . $commitResponse->getBody()]];
+                return [[
+                    'plugins.importexport.zenodo.api.error.fileError',
+                    $commitResponse->getStatusCode() . ' - ' . $commitResponse->getBody()
+                ]];
             }
         }
         return true;
@@ -505,13 +520,49 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 ],
             );
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
+            return [['plugins.importexport.zenodo.api.error.fileDeleteError', $e->getMessage()]];
         }
 
         if ($deleteFileResponse->getStatusCode() != self::ZENODO_API_NO_CONTENT) {
-            return [['plugins.importexport.zenodo.api.error.fileError', $deleteFileResponse->getStatusCode() . ' - ' . $deleteFileResponse->getBody()]];
+            return [[
+                'plugins.importexport.zenodo.api.error.fileDeleteError',
+                $deleteFileResponse->getStatusCode() . ' - ' . $deleteFileResponse->getBody()
+            ]];
         }
 
+        return true;
+    }
+
+    /*
+     * Delete a draft record in Zenodo.
+     * https://inveniordm-dev.docs.cern.ch/reference/rest_api_drafts_records/#deletediscard-a-draft-record
+     */
+    protected function deleteRecord(int $zenodoRecId, string $url, string $apiKey): bool|array
+    {
+        $httpClient = Application::get()->getHttpClient();
+        $deleteRecordUrl = $url . '/' . $zenodoRecId . '/draft';
+        $deleteRecordHeaders = [
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $deleteRecordResponse = $httpClient->request(
+                'DELETE',
+                $deleteRecordUrl,
+                [
+                    'headers' => $deleteRecordHeaders,
+                ],
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.api.error.recordDeleteError', $e->getMessage()]];
+        }
+
+        if ($deleteRecordResponse->getStatusCode() != self::ZENODO_API_NO_CONTENT) {
+            return [[
+                'plugins.importexport.zenodo.api.error.recordDeleteError',
+                $deleteRecordResponse->getStatusCode() . ' - ' . $deleteRecordResponse->getBody()
+            ]];
+        }
         return true;
     }
 
@@ -540,12 +591,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $httpClient = Application::get()->getHttpClient();
 
         try {
-            $response = $httpClient->request('GET', $awardsUrl);
-            $statusCode = $response->getStatusCode();
-            $body = json_decode($response->getBody(), true);
+            $awardResponse = $httpClient->request('GET', $awardsUrl);
+            $body = json_decode($awardResponse->getBody(), true);
 
             if (
-                $statusCode === self::ZENODO_API_OK && !empty($body['id'])
+                $awardResponse->getStatusCode() === self::ZENODO_API_OK
+                && !empty($body['id'])
                 && $body['id'] == $funderRor . '::' . $award
             ) {
                 return true;
@@ -582,7 +633,10 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         }
 
         if ($publishResponse->getStatusCode() != self::ZENODO_API_ACCEPTED) {
-            return [['plugins.importexport.zenodo.api.error.publishError', $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()]];
+            return [[
+                'plugins.importexport.zenodo.api.error.publishError',
+                $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()
+            ]];
         }
 
         return true;
