@@ -22,7 +22,7 @@
 				<p class="pkp_help">
 					{translate key="plugins.importexport.zenodo.registrationIntro"}
 				</p>
-				{fbvElement type="text" id="apiKey" value=$apiKey label="plugins.importexport.zenodo.settings.form.apiKey" maxlength="100" size=$fbvStyles.size.MEDIUM}
+				{fbvElement type="text" id="apiKey" password=true value=$apiKey label="plugins.importexport.zenodo.settings.form.apiKey" maxlength="100" size=$fbvStyles.size.MEDIUM}
 				<br/>
 			{/fbvFormSection}
 			{fbvFormSection list="true"}
