@@ -93,7 +93,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Access Rights
         $status = 'open';
-        $access = 'public';
+        $fileAccess = 'public';
 
         if ($issue) {
             if (
@@ -101,17 +101,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 $issue->getAccessStatus() == Issue::ISSUE_ACCESS_SUBSCRIPTION
             ) {
                 $status = $issue->getOpenAccessDate() ? 'embargoed' : 'metadata-only';
-                $access = $issue->getOpenAccessDate() ? 'restricted' : 'public';
+                $fileAccess = 'restricted';
             }
         }
 
         $article['access'] = [
-            'files' => $access,
-            'record' => $access,
+            'files' => $fileAccess,
+            'record' => 'public', // only files can be restricted
             'status' => $status,
         ];
 
-        if ($issue && $status == 'embargoed') { // @todo test this
+        if ($issue && $status == 'embargoed') {
             $openAccessDate = Carbon::parse($issue->getOpenAccessDate());
             $article['access']['embargo']['active'] = 'true';
             $article['access']['embargo']['until'] = $openAccessDate->format('Y-m-d');
@@ -204,6 +204,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Version relation
         // DOI versioning is only supported for Zenodo DOIs
+        // @todo once DOI versioning is implemented, add relations for all version DOIs
         // $article['metadata']['related_identifiers'][] = [
         //     'relation_type' => [
         //         'id' => 'isVersionOf'

@@ -145,8 +145,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
-        $baseUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
-        $recordsUrl = $baseUrl . self::ZENODO_API_OPERATION;
+        $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
+        $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
         if ($object->getData($this->getIdSettingName())) {
             // @todo determine if/how to handle cases where zenodo ID exists
@@ -168,7 +168,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         try {
             $response = $httpClient->request(
                 'POST',
-                $recordsUrl,
+                $recordsApiUrl,
                 [
                     'headers' => $headers,
                     'json' => json_decode($jsonString),
@@ -188,24 +188,25 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             ]];
         }
 
-        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $recordsUrl, $apiKey);
+        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $recordsApiUrl, $apiKey);
         if (is_array($filesDeposit)) {
-            $this->deleteRecord($zenodoRecId, $recordsUrl, $apiKey);
+            // File deposit has failed, try to delete the record in Zenodo then return the error
+            $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
             return $filesDeposit;
         }
 
         // Submit the record to a community
         $communityId = $this->getCommunityId($context);
         if ($communityId) {
-            if ($review = $this->createReview($zenodoRecId, $communityId, $recordsUrl, $apiKey)) {
+            if ($review = $this->createReview($zenodoRecId, $communityId, $recordsApiUrl, $apiKey)) {
                 // @todo depending on the community permissions, this can automatically publish the record - make sure this is clear to the user.
-                $requestId = $this->submitReview($zenodoRecId, $baseUrl, $apiKey);
+                $requestId = $this->submitReview($zenodoRecId, $zenodoApiUrl, $apiKey);
                 $autoPublishCommunity = $this->automaticPublishingCommunity($context);
                 if (is_array($requestId)) {
                     return $requestId;
                 } elseif ($autoPublishCommunity && $requestId) {
                     // @todo handle errors - if this fails, delete the review request?
-                    $reviewAccepted = $this->acceptReview($requestId, $recordsUrl, $apiKey);
+                    $reviewAccepted = $this->acceptReview($requestId, $recordsApiUrl, $apiKey);
                 }
             } elseif (is_array($review)) {
                 return $review;
@@ -216,11 +217,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         // (e.g. record may be published already)
         $autoPublish = $this->automaticPublishing($context);
         if ($autoPublish) {
-            $published = $this->publishZenodoRecord($zenodoRecId, $recordsUrl, $apiKey);
+            $published = $this->publishZenodoRecord($zenodoRecId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
                 // @todo custom error message? e.g draft was created but publishing failed
                 // in this case there is still a draft - delete it then return the error
-                $this->deleteRecord($zenodoRecId, $recordsUrl, $apiKey);
+                // @todo can't delete a record if there is an open review to a community
+                $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
                 return $published;
             }
         }
@@ -332,7 +334,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
-     * Get the Zenodo community that records should be submitted to.
+     * Get the Zenodo community slug that records should be submitted to.
      */
     public function getCommunity(Context $context): string|false
     {
@@ -348,7 +350,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
-     * Check whether we will try to automatically publish Zenodo records to a community.
+     * Check whether we will try to automatically publish Zenodo records in the community.
      */
     public function automaticPublishingCommunity(Context $context): bool
     {
@@ -387,6 +389,18 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         return [$this->getDepositStatusSettingName(), $this->getIdSettingName()];
     }
 
+    /**
+     * @copydoc \PKP\plugins\interfaces\HasTaskScheduler::registerSchedules()
+     */
+    public function registerSchedules(PKPScheduler $scheduler): void
+    {
+        $scheduler
+            ->addSchedule(new ZenodoInfoSender())
+            ->daily()
+            ->name(ZenodoInfoSender::class)
+            ->withoutOverlapping();
+    }
+
     /*
      * Send files to the Zenodo API.
      * https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file
@@ -407,7 +421,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $pubLocale = $publication->getData('locale');
 
         foreach ($publication->getData('galleys') as $galley) { /** @var Galley $galley */
-            $submissionFile = Repo::submissionFile()->get($galley->getData('submissionFileId'));
+            $submissionFile = $galley->getData('submissionFileId')
+                ? Repo::submissionFile()->get($galley->getData('submissionFileId'))
+                : null;
             if (!$submissionFile) {
                 continue;
             }
@@ -564,18 +580,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             ]];
         }
         return true;
-    }
-
-    /**
-     * @copydoc \PKP\plugins\interfaces\HasTaskScheduler::registerSchedules()
-     */
-    public function registerSchedules(PKPScheduler $scheduler): void
-    {
-        $scheduler
-            ->addSchedule(new ZenodoInfoSender())
-            ->daily()
-            ->name(ZenodoInfoSender::class)
-            ->withoutOverlapping();
     }
 
     /*
