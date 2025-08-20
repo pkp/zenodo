@@ -260,7 +260,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // License @todo check for restricted data
         $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
-        if (preg_match('/creativecommons\.org\/licenses\/(.*?)\/([\d.]+)$/i', $licenseUrl, $match)) {
+        if (preg_match('/creativecommons\.org\/licenses\/(.*?)\/([\d.]+)\/?$/i', $licenseUrl, $match)) {
             $article['metadata']['rights'][] = [
                 'id' => 'cc-' . $match[1] . '-' . $match[2],
             ];
