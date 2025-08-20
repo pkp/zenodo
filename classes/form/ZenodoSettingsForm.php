@@ -67,7 +67,7 @@ class ZenodoSettingsForm extends Form
             'optional',
             'plugins.importexport.zenodo.register.error.communityError',
             function ($community) {
-                $communityId = $this->getCommunityId($community, $this->contextId, $this->plugin);
+                $communityId = $this->getCommunityId(strtolower($community), $this->contextId, $this->plugin);
                 if (is_array($communityId)) {
                     error_log(__($communityId[0], ['param' => $communityId[1]]));
                     return false;
@@ -112,15 +112,17 @@ class ZenodoSettingsForm extends Form
         $contextId = $this->getContextId();
         parent::execute(...$functionArgs);
         foreach ($this->getFormFields() as $fieldName => $fieldType) {
-            $plugin->updateSetting($contextId, $fieldName, $this->getData($fieldName), $fieldType);
             // reset the communityId if the community field is empty.
             if ($fieldName == 'community') {
+                $plugin->updateSetting($contextId, $fieldName, strtolower($this->getData($fieldName)), $fieldType);
                 if (
                     $this->getData($fieldName) == ''
                     && $plugin->getSetting($contextId, 'communityId') != ''
                 ) {
                     $plugin->updateSetting($contextId, 'communityId', '', 'string');
                 }
+            } else {
+                $plugin->updateSetting($contextId, $fieldName, $this->getData($fieldName), $fieldType);
             }
         }
     }
