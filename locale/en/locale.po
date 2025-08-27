@@ -112,6 +112,9 @@ msgstr "Accepting the review request was not successful! The Zenodo API returned
 msgid "plugins.importexport.zenodo.api.error.noDoi"
 msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
 
+msgid "plugins.importexport.ror.api.error.awardError"
+msgstr "The ROR funder lookup was not successful! The ROR API returned an error: '{$param}'."
+
 msgid "plugins.importexport.zenodo.cliUsage"
 msgstr ""
 "Usage:\n"

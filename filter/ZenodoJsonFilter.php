@@ -452,43 +452,31 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /*
-     * May not be needed when funding plugin migrates to use ROR
-     * List based on:
-     * https://github.com/zenodo/zenodo/blob/master/zenodo/modules/deposit/static/json/zenodo_deposit/deposit_form.json#L538
-     * https://github.com/zenodo/zenodo/issues/2371
-     * mapping:
-     * https://github.com/zenodo/zenodo-rdm/blob/master/legacy/zenodo_legacy/funders.py#L13
+     * Find the funder ROR ID from the Crossref funder ID.
+     * To be removed once the funding plugin has migrated to ROR.
+     * e.g. https://api.ror.org/v2/organizations?query=%22501100002341%22
      */
-    private function getFunderROR(string $funderIdentification): string|bool
+    private function getFunderROR(string $funderIdentification): string|bool|array
     {
-        return match ($funderIdentification) {
-            'https://doi.org/10.13039/501100002341' => '05k73zm37', // Academy of Finland
-            'https://doi.org/10.13039/501100001665' => '00rbzpz17', // Agence Nationale de la Recherche
-            'https://doi.org/10.13039/100018231'    => '03zj4c476', // Aligning Science Across Parkinson’s
-            'https://doi.org/10.13039/501100000923' => '05mmh0f86', // Australian Research Council
-            'https://doi.org/10.13039/501100002428' => '013tf3c58', // Austrian Science Fund
-            'https://doi.org/10.13039/501100000024' => '01gavpb45', // Canadian Institutes of Health Research
-            'https://doi.org/10.13039/501100000780' => '00k4n6c32', // European Commission
-            'https://doi.org/10.13039/501100000806' => '02k4b9v70', // European Environment Agency
-            'https://doi.org/10.13039/501100001871' => '00snfqn58', // Fundação para a Ciência e a Tecnologia
-            'https://doi.org/10.13039/501100004488' => '03n51vw80', // Hrvatska Zaklada za Znanost
-            'https://doi.org/10.13039/501100006364' => '03m8vkq32', // Institut National Du Cancer
-            'https://doi.org/10.13039/501100004564' => '01znas443', // Ministarstvo Prosvete, Nauke i Tehnološkog Razvoja
-            'https://doi.org/10.13039/501100006588' => '0507etz14', // Ministarstvo Znanosti, Obrazovanja i Sporta //
-            'https://doi.org/10.13039/501100000925' => '011kf5r70', // National Health and Medical Research Council
-            'https://doi.org/10.13039/100000002'    => '01cwqze88', // National Institutes of Health
-            'https://doi.org/10.13039/100000001'    => '021nxhr62', // National Science Foundation
-            'https://doi.org/10.13039/501100000038' => '01h531d29', // Natural Sciences and Engineering Research Council of Canada
-            'https://doi.org/10.13039/501100003246' => '04jsz6e67', // Nederlandse Organisatie voor Wetenschappelijk Onderzoek
-            'https://doi.org/10.13039/501100001711' => '00yjd3n13', // Schweizerischer Nationalfonds zur Förderung der wissenschaftlichen Forschung
-            'https://doi.org/10.13039/501100001602' => '0271asj38', // Science Foundation Ireland
-            'https://doi.org/10.13039/100001345'    => '006cvnv84', // Social Science Research Council
-            'https://doi.org/10.13039/501100011730' => '00x0z1472', // Templeton World Charity Foundation
-            'https://doi.org/10.13039/501100004410' => '04w9kkr77', // Türkiye Bilimsel ve Teknolojik Araştırma Kurumu
-            'https://doi.org/10.13039/501100000690',
-            'https://doi.org/10.13039/100014013'    => '001aqnf71', // Research Councils UK, UK Research and Innovation
-            'https://doi.org/10.13039/100004440'    => '029chgv08', // Wellcome Trust
-            default => false,
-        };
+        $apiUrl = 'https://api.ror.org/v2/organizations';
+        $funderId = str_replace('https://doi.org/10.13039/', '', $funderIdentification);
+        $queryUrl = $apiUrl . '?query=%22' . $funderId . '%22';
+        $httpClient = Application::get()->getHttpClient();
+
+        try {
+            $rorResponse = $httpClient->request('GET', $queryUrl);
+            $body = json_decode($rorResponse->getBody(), true);
+
+            if (
+                $body['number_of_results'] == 1
+                && preg_match('/^https:\/\/ror\.org\/(.*)$/', $body['items'][0]['id'], $matches)
+            ) {
+                $rorId = $matches[1];
+            }
+
+            return $rorId ?? false;
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.ror.api.error.awardError', $e->getMessage()]];
+        }
     }
 }
