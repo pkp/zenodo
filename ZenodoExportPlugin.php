@@ -139,60 +139,42 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      */
     public function depositXML($object, $context, $jsonString): bool|array
     {
-        $httpClient = Application::get()->getHttpClient();
         $apiKey = $this->getApiKey($context);
         if (!$apiKey) {
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
+        $mintDoi = $this->mintZenodoDois($context);
+        if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
+            return [['plugins.importexport.zenodo.api.error.noDoi']];
+        }
+
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
-        if ($object->getData($this->getIdSettingName())) {
-            // @todo determine if/how to handle cases where zenodo ID exists
-            error_log('I already have a zenodo ID');
-            $isPublished = $this->isRecordPublished($object->getData($this->getIdSettingName()), $url); // @todo
+        $isUpdate = false;
+        if ($zenodoRecId = $object->getData($this->getIdSettingName())) {
+            $isPublished = $this->isRecordPublished($zenodoRecId, $recordsApiUrl);
+            if (!$isPublished) {
+                $isUpdate = true;
+            } else {
+                return [['plugins.importexport.zenodo.api.error.isPublished']];
+            }
         }
 
-        $mintDoi = $this->mintZenodoDois($context);
-        if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
-            return [['plugins.importexport.zenodo.register.error.noDoi']];
+        $zenodoRecId = $this->depositRecord($jsonString, $recordsApiUrl, $apiKey, $isUpdate, $zenodoRecId); // @todo fix naming
+        if (is_array($zenodoRecId)) {
+            // Deposit or update has failed @todo more here?
+            return $zenodoRecId;
         }
 
-        $headers = [
-            'Content-Type' => 'application/json',
-            'Accept' => 'application/vnd.inveniordm.v1+json',
-            'Authorization' => 'Bearer ' . $apiKey,
-        ];
-
-        try {
-            $response = $httpClient->request(
-                'POST',
-                $recordsApiUrl,
-                [
-                    'headers' => $headers,
-                    'json' => json_decode($jsonString),
-                ]
-            );
-        } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.zenodo.api.error.mdsError', $e->getMessage()]];
-        }
-
-        $responseBody = json_decode($response->getBody());
-        $zenodoRecId = $responseBody->id;
-
-        if ($response->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
-            return [[
-                'plugins.importexport.zenodo.api.error.mdsError',
-                $response->getStatusCode() . ' - ' . $response->getBody()
-            ]];
-        }
-
-        $filesDeposit = $this->depositFiles($object, $zenodoRecId, $recordsApiUrl, $apiKey);
-        if (is_array($filesDeposit)) {
-            // File deposit has failed, try to delete the record in Zenodo then return the error
-            $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
-            return $filesDeposit;
+        if (!$isUpdate) { // @todo disable file deposit for updates for now as it will fail if the filename exists already
+            $filesDeposit = $this->depositFiles($object, $recordsApiUrl, $apiKey, $zenodoRecId);
+            if (is_array($filesDeposit)) {
+                // File deposit has failed, try to delete the record in Zenodo then return the error
+                $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
+                return $filesDeposit;
+            }
         }
 
         // Submit the record to a community
@@ -210,7 +192,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                 }
             } elseif (is_array($review)) {
                 return $review;
-            };
+            }
         }
 
         // @todo consider how to handle this alongside auto publishing in community
@@ -267,7 +249,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
                     foreach ($errors as $error) {
                         if (!is_array($error) || !count($error) > 0) {
                             throw new Exception('Invalid error message');
-                        };
+                        }
                         $this->_sendNotification(
                             $request->getUser(),
                             $error[0],
@@ -401,11 +383,51 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             ->withoutOverlapping();
     }
 
+    protected function depositRecord(string $json, string $url, string $apiKey, bool $isUpdate = false, string $zenodoRecId = null): string|array
+    {
+        $httpClient = Application::get()->getHttpClient();
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/vnd.inveniordm.v1+json',
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        // Set variables depending on whether we are updating or creating a record
+        $operation = $isUpdate ? 'PUT' : 'POST';
+        $successResponse = $isUpdate ? self::ZENODO_API_OK : self::ZENODO_API_DEPOSIT_CREATED;
+        if ($isUpdate) {
+            $url = $url . '/' . $zenodoRecId . '/draft';
+        }
+
+        try {
+            $response = $httpClient->request(
+                $operation,
+                $url,
+                [
+                    'headers' => $headers,
+                    'json' => json_decode($json),
+                ]
+            );
+        } catch (GuzzleException | Exception $e) {
+            return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
+        }
+
+        if ($response->getStatusCode() != $successResponse) {
+            return [[
+                'plugins.importexport.zenodo.register.error.mdsError',
+                $response->getStatusCode() . ' - ' . $response->getBody()
+            ]];
+        }
+
+        $responseBody = json_decode($response->getBody());
+        return $responseBody->id;
+    }
+
     /*
      * Send files to the Zenodo API.
      * https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file
      */
-    protected function depositFiles(Submission $object, int $zenodoRecId, string $url, string $apiKey): bool|array
+    protected function depositFiles(Submission $object, string $url, string $apiKey, int $zenodoRecId): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
         $filesMetadataUrl = $url . '/' . $zenodoRecId . '/draft/files';
@@ -651,7 +673,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      */
     public function isRecordPublished(int $zenodoRecId, string $url): bool|array
     {
-        $recordUrl = $url . '/' . $zenodoRecId . '/';
+        $recordUrl = $url . '/' . $zenodoRecId;
         $httpClient = Application::get()->getHttpClient();
 
         try {
