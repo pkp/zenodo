@@ -213,21 +213,22 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //     'scheme' => 'doi',
         // ];
 
-        // Other Subjects? @todo
-        // Keywords
-        $keywords = $publication->getData('keywords', $publicationLocale);
-        if (!empty($keywords)) {
-            $keywordsMeta = [];
-            foreach ($keywords as $keyword) {
-                $keywordsMeta[] = [
-                    'subject' => $keyword,
+
+        // Keywords and Subjects
+        $keywords = $publication->getData('keywords', $publicationLocale) ?? [];
+        $subjects = $publication->getData('subjects', $publicationLocale) ?? [];
+        $keywordsSubjects = array_merge($keywords, $subjects);
+        if (!empty($keywordsSubjects)) {
+            $subjectMetadata = [];
+            foreach ($keywordsSubjects as $subject) {
+                $subjectMetadata[] = [
+                    'subject' => $subject,
                 ];
             }
-            $article['metadata']['subjects'] = $keywordsMeta;
+            $article['metadata']['subjects'] = $subjectMetadata;
         }
 
         // Funding metadata
-        // @todo re-test if validation of award and conversion to ROR is needed in new API
         $fundingMetadata = $this->fundingMetadata($submissionId);
         if ($fundingMetadata) {
             $article['metadata']['funding'] = $fundingMetadata;
@@ -259,7 +260,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             ]);
         };
 
-        // License @todo check for restricted data
+        // License
         $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
         if (preg_match('/creativecommons\.org\/licenses\/(.*?)\/([\d.]+)\/?$/i', $licenseUrl, $match)) {
             $article['metadata']['rights'][] = [
