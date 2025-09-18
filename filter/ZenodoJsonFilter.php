@@ -35,6 +35,7 @@ use PKP\context\Context;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
 use PKP\filter\FilterGroup;
+use PKP\galley\Galley;
 use PKP\i18n\LocaleConversion;
 use PKP\plugins\importexport\PKPImportExportFilter;
 use PKP\plugins\PluginRegistry;
@@ -229,7 +230,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Funding metadata
-        $fundingMetadata = $this->fundingMetadata($submissionId);
+        $fundingMetadata = $this->getFundingData($submissionId);
         if ($fundingMetadata) {
             $article['metadata']['funding'] = $fundingMetadata;
         }
@@ -241,13 +242,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['version'] = $versionMajor . '.' . $versionMinor;
         }
 
-        // Language (ISO 639-3)
-        // @todo multilingual? e.g. what if galleys are in multiple languages?
-        $language = LocaleConversion::getIso3FromLocale($publicationLocale);
-        if ($language) {
-            $article['metadata']['languages'][] = [
-                'id' => $language,
-            ];
+        // Languages (ISO 639-3)
+        $languagesData = $this->getLanguagesData($publication, $publicationLocale);
+        if (!empty($languagesData)) {
+            foreach ($languagesData as $language) {
+                $article['metadata']['languages'][] = [
+                    'id' => $language,
+                ];
+            }
         }
 
         // Copyright statement
@@ -410,7 +412,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /*
      * Helper function for funding metadata
      */
-    private function fundingMetadata(int $submissionId): false|array
+    private function getFundingData(int $submissionId): false|array
     {
         /** @var ZenodoExportDeployment $deployment */
         $deployment = $this->getDeployment();
@@ -479,5 +481,22 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         } catch (GuzzleException | Exception $e) {
             return [['plugins.importexport.ror.api.error.awardError', $e->getMessage()]];
         }
+    }
+
+    /*
+     * Helper function for language metadata which collects publication language
+     * and galley languages.
+     */
+    private function getLanguagesData(Publication $publication, string $publicationLocale): array
+    {
+        $languageList = [];
+        $languageList[] = LocaleConversion::getIso3FromLocale($publicationLocale);
+        $galleys = $publication->getData('galleys');
+        if (!empty($galleys)) {
+            foreach ($publication->getData('galleys') as $galley) { /** @var Galley $galley */
+                $languageList[] = LocaleConversion::getIso3FromLocale($galley->getLocale());
+            }
+        }
+        return array_unique($languageList);
     }
 }
