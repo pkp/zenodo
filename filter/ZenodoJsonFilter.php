@@ -193,6 +193,28 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'scheme' => 'url',
         ];
 
+        $onlineIssn = $context->getData('onlineIssn') ?? null;
+        if ($onlineIssn) {
+            $article['metadata']['related_identifiers'][] = [
+                'identifier' => $onlineIssn,
+                'relation_type' => [
+                    'id' => 'ispublishedin'
+                ],
+                'scheme' => 'issn',
+            ];
+        }
+
+        $printIssn = $context->getData('printIssn') ?? null;
+        if ($printIssn) {
+            $article['metadata']['related_identifiers'][] = [
+                'identifier' => $onlineIssn,
+                'relation_type' => [
+                    'id' => 'ispublishedin'
+                ],
+                'scheme' => 'issn',
+            ];
+        }
+
         // Cites relation
         // @todo once structured citations are available add related identifiers using "Cites" relation
         // $article['metadata']['related_identifiers'][] = [
@@ -213,7 +235,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //     'identifier' => '', // DOI
         //     'scheme' => 'doi',
         // ];
-
 
         // Keywords and Subjects
         $keywords = $publication->getData('keywords', $publicationLocale) ?? [];
@@ -274,7 +295,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // For an exact date, use the same value for both start and end.
         // Options: accepted, available, collected, copyrighted, created, issued,
         //          other, submitted, updated, valid, withdrawn.
-
         $editorDecision = Repo::decision()->getCollector()
             ->filterBySubmissionIds([$submissionId])
             ->getMany()
@@ -322,12 +342,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $journalData['title'] = $journalTitle;
 
         // ISSN
+        $issn = null;
         if ($context->getData('onlineIssn') != '') {
-            $journalData['issn'] = $context->getData('onlineIssn');
+            $issn = $context->getData('onlineIssn');
         } elseif ($context->getData('issn') != '') {
-            $journalData['issn']  = $context->getData('issn');
+            $issn = $context->getData('issn');
         } elseif ($context->getData('printIssn') != '') {
-            $journalData['issn']  = $context->getData('printIssn');
+            $issn = $context->getData('printIssn');
+        }
+
+        if ($issn) {
+            $journalData['issn'] = $issn;
         }
 
         if ($issue) {
