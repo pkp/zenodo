@@ -58,8 +58,8 @@ msgstr ""
 
 msgid "plugins.importexport.zenodo.settings.form.doi.description"
 msgstr ""
-"<strong>Zenodo DOIs:</strong> Allow Zenodo to mint DOIs when a DOI has not been created in OJS. If not enabled, objects will not be deposited"
-" unless they have a DOI."
+"<strong>Zenodo DOIs:</strong> Allow Zenodo to mint DOIs when a DOI has not been created in OJS. If not enabled, only objects "
+"with a DOI can be deposited."
 
 msgid "plugins.importexport.zenodo.settings.form.testMode.description"
 msgstr ""
