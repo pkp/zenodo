@@ -30,7 +30,7 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use PKP\affiliation\Affiliation;
-use PKP\citation\CitationDAO;
+use PKP\citation\Citation;
 use PKP\context\Context;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
@@ -159,20 +159,50 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // References
-        $citationDao = DAORegistry::getDAO('CitationDAO');
-        /** @var CitationDAO $citationDao */
-        $rawCitations = $citationDao->getRawCitationsByPublicationId($publicationId)->toArray();
-        if ($rawCitations) {
-            foreach ($rawCitations as $rawCitation) {
-                $article['metadata']['references'][] = [
-                    'reference' => $rawCitation
+        $citations = $publication->getData('citations') ?? [];
+        if (!empty($citations)) {
+            $citedIdentifiers = [];
+            foreach ($citations as $citation) { /* @var Citation $citation */
+                $referenceData = [];
+                $referenceData['reference'] = $citation->getRawCitation();
+
+                // https://inveniordm.docs.cern.ch/reference/metadata/#identifier-schemes
+                // @todo add arxiv to list once format is fixed (should not be a url e.g. arXiv:2401.12345)
+                $supportedIdentifiers = [
+                    'doi', 'handle', 'url', 'urn'
                 ];
+
+                foreach ($supportedIdentifiers as $identifier) {
+                    if ($citation->getData($identifier)) {
+                        $referenceData['identifier'] = $citation->getData($identifier);
+                        $referenceData['scheme'] = $identifier;
+                        $citedIdentifiers[] = [
+                            'identifier' => $citation->getData($identifier),
+                            'scheme' => $identifier,
+                        ];
+                    }
+                }
+
+                $article['metadata']['references'][] = $referenceData;
             }
         }
 
         // Related Identifiers
         // Schemes: https://inveniordm-dev.docs.cern.ch/reference/metadata/#identifier-schemes
         // Types: https://github.com/inveniosoftware/invenio-rdm-records/blob/master/invenio_rdm_records/fixtures/data/vocabularies/relation_types.yaml
+
+        // Cites relations
+        if (!empty($citedIdentifiers)) {
+            foreach ($citedIdentifiers as $citedIdentifier) {
+                $article['metadata']['related_identifiers'][] = [
+                    'identifier' => $citedIdentifier['identifier'],
+                    'relation_type' => [
+                        'id' => 'cites',
+                    ],
+                    'scheme' => $citedIdentifier['scheme'],
+                ];
+            }
+        }
 
         // FullText URL relation
         $request = Application::get()->getRequest();
@@ -193,6 +223,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             'scheme' => 'url',
         ];
 
+        // Online ISSN relation
         $onlineIssn = $context->getData('onlineIssn') ?? null;
         if ($onlineIssn) {
             $article['metadata']['related_identifiers'][] = [
@@ -204,26 +235,17 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             ];
         }
 
+        // Print ISSN relation
         $printIssn = $context->getData('printIssn') ?? null;
         if ($printIssn) {
             $article['metadata']['related_identifiers'][] = [
-                'identifier' => $onlineIssn,
+                'identifier' => $printIssn,
                 'relation_type' => [
                     'id' => 'ispublishedin'
                 ],
                 'scheme' => 'issn',
             ];
         }
-
-        // Cites relation
-        // @todo once structured citations are available add related identifiers using "Cites" relation
-        // $article['metadata']['related_identifiers'][] = [
-        //     'identifier' => '',
-        //     'relation_type' => [
-        //         'id' => 'cites',
-        //     ],
-        //     'scheme' => 'doi',
-        // ];
 
         // Version relation
         // DOI versioning is only supported for Zenodo DOIs
