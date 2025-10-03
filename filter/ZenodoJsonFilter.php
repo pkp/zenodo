@@ -28,12 +28,12 @@ use APP\publication\Publication;
 use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\DB;
 use PKP\affiliation\Affiliation;
 use PKP\citation\Citation;
 use PKP\context\Context;
 use PKP\core\PKPString;
-use PKP\db\DAORegistry;
 use PKP\filter\FilterGroup;
 use PKP\galley\Galley;
 use PKP\i18n\LocaleConversion;
@@ -75,18 +75,19 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         $submissionId = $pubObject->getId();
         $publication = $pubObject->getCurrentPublication();
-        $publicationId = $publication->getId();
         $publicationLocale = $publication->getData('locale');
 
         $issueId = $publication->getData('issueId');
-        if ($cache->isCached('issues', $issueId)) {
-            $issue = $cache->get('issues', $issueId);
-            /** @var Issue $issue */
-        } else {
-            $issue = Repo::issue()->get($issueId);
-            $issue = $issue->getJournalId() == $context->getId() ? $issue : null;
-            if ($issue) {
-                $cache->add($issue, null);
+        $issue = null;
+        if ($issueId) {
+            if ($cache->isCached('issues', $issueId)) {
+                $issue = $cache->get('issues', $issueId); /** @var Issue $issue */
+            } else {
+                $issue = Repo::issue()->get($issueId);
+                $issue = $issue->getJournalId() == $context->getId() ? $issue : null;
+                if ($issue) {
+                    $cache->add($issue, null);
+                }
             }
         }
 
@@ -273,7 +274,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Funding metadata
-        $fundingMetadata = $this->getFundingData($submissionId);
+        $fundingMetadata = $this->getFundingData($submissionId, $context);
         if ($fundingMetadata) {
             $article['metadata']['funding'] = $fundingMetadata;
         }
@@ -314,9 +315,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Dates
-        // For an exact date, use the same value for both start and end.
-        // Options: accepted, available, collected, copyrighted, created, issued,
-        //          other, submitted, updated, valid, withdrawn.
+        // https://inveniordm.docs.cern.ch/reference/metadata/#dates-0-n
         $editorDecision = Repo::decision()->getCollector()
             ->filterBySubmissionIds([$submissionId])
             ->getMany()
@@ -377,14 +376,13 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $journalData['issn'] = $issn;
         }
 
+        // Volume and Issue Number
         if ($issue) {
-            // Volume
             $volume = $issue->getVolume();
             if (!empty($volume)) {
                 $journalData['volume'] = (string)$volume;
             }
 
-            // Issue Number
             $issueNumber = $issue->getNumber();
             if (!empty($issueNumber)) {
                 $journalData['issue'] = $issueNumber;
@@ -409,8 +407,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $articleAuthors = $publication->getData('authors');
         $authorsData = [];
 
-        foreach ($articleAuthors as $articleAuthor) {
-            /** @var Author $author */
+        foreach ($articleAuthors as $articleAuthor) { /** @var Author $articleAuthor */
             $author = [];
 
             if ($articleAuthor->getGivenName($publicationLocale)) {
@@ -430,7 +427,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 ];
             }
 
-            $affiliations = $articleAuthor->getAffiliations($publicationLocale);
+            $affiliations = $articleAuthor->getAffiliations();
             if (count($affiliations) > 0) {
                 $affiliationsData = [];
                 foreach ($affiliations as $affiliation) { /** @var Affiliation $affiliation */
@@ -459,11 +456,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /*
      * Helper function for funding metadata
      */
-    private function getFundingData(int $submissionId): false|array
+    private function getFundingData(int $submissionId, Context $context): false|array
     {
         /** @var ZenodoExportDeployment $deployment */
         $deployment = $this->getDeployment();
-        $context = $deployment->getContext();
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
 
