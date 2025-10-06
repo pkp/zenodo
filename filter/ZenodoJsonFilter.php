@@ -269,6 +269,16 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             ];
         }
 
+        // Review relations
+        // @todo once https://github.com/pkp/pkp-lib/issues/11332 is implemented, add relations for review DOIs
+        // $article['metadata']['related_identifiers'][] = [
+        //     'identifier' => $reviewDoi,
+        //     'relation_type' => [
+        //         'id' => 'isreviewedby'
+        //     ],
+        //     'scheme' => 'doi',
+        // ];
+
         // Version relation
         // DOI versioning is only supported for Zenodo DOIs
         // @todo once DOI versioning is implemented, add relations for all version DOIs
@@ -373,7 +383,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /*
-     * Helper function for journal metadata
+     * Helper function for journal metadata.
+     * https://inveniordm.docs.cern.ch/reference/metadata/#journal
      */
     private function getJournalData(Context $context, Publication $publication, ?Issue $issue = null): array
     {

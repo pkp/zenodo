@@ -69,7 +69,7 @@
 						{capture assign=publicationsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.publications.ExportPublishedPublicationsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
 						{load_url_in_div id="publicationsListGridContainer" url=$publicationsListGridUrl}
 						{fbvFormSection list="true"}
-						{fbvElement type="checkbox" id="validation" label="plugins.importexport.common.validation" checked=$validation|default:true}
+							{fbvElement type="checkbox" id="validation" label="plugins.importexport.common.validation" checked=$validation|default:true}
 						{/fbvFormSection}
 						{if !empty($actionNames)}
 							{fbvFormSection}
