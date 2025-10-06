@@ -2,7 +2,7 @@
 <!DOCTYPE version SYSTEM "../../../lib/pkp/dtd/pluginVersion.dtd">
 
 <!--
-  * plugins/importexport/zenodo/version.xml
+  * plugins/generic/zenodo/version.xml
   *
   * Copyright (c) 2025 Simon Fraser University
   * Copyright (c) 2025 John Willinsky
@@ -12,7 +12,8 @@
   -->
 <version>
 	<application>zenodo</application>
-	<type>plugins.importexport</type>
+	<type>plugins.generic</type>
 	<release>1.0.0.0</release>
-	<date>2025-07-08</date>
+	<date>2025-10-03</date>
+    <class>ZenodoPlugin</class>
 </version>

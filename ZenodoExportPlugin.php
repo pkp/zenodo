@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/zenodo/ZenodoExportPlugin.php
+ * @file plugins/generic/zenodo/ZenodoExportPlugin.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -12,13 +12,14 @@
  * @brief Zenodo export plugin
  */
 
-namespace APP\plugins\importexport\zenodo;
+namespace APP\plugins\generic\zenodo;
 
 use APP\core\Application;
 use APP\core\Services;
 use APP\facades\Repo;
-use APP\plugins\importexport\zenodo\filter\ZenodoJsonFilter;
+use APP\plugins\generic\zenodo\filter\ZenodoJsonFilter;
 use APP\plugins\PubObjectsExportPlugin;
+use APP\publication\Publication;
 use APP\submission\Submission;
 use APP\template\TemplateManager;
 use Exception;
@@ -30,9 +31,10 @@ use PKP\db\DAORegistry;
 use PKP\filter\FilterDAO;
 use PKP\galley\Galley;
 use PKP\notification\Notification;
+use PKP\plugins\interfaces\HasTaskScheduler;
 use PKP\scheduledTask\PKPScheduler;
 
-class ZenodoExportPlugin extends PubObjectsExportPlugin
+class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskScheduler
 {
     public const ZENODO_API_OK = 200;
     public const ZENODO_API_DEPOSIT_CREATED = 201;
@@ -100,6 +102,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     }
 
     /**
+     * @copydoc PubObjectsExportPlugin::getPublicationFilter()
+     */
+    public function getPublicationFilter(): ?string
+    {
+        return 'publication=>zenodo-json';
+    }
+
+    /**
      * @copydoc PubObjectsExportPlugin::getExportActions()
      */
     public function getExportActions($context): array
@@ -116,7 +126,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      */
     public function getExportDeploymentClassName(): string
     {
-        return '\APP\plugins\importexport\zenodo\ZenodoExportDeployment';
+        return '\APP\plugins\generic\zenodo\ZenodoExportDeployment';
     }
 
     /**
@@ -124,11 +134,23 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      */
     public function getSettingsFormClassName(): string
     {
-        return '\APP\plugins\importexport\zenodo\classes\form\ZenodoSettingsForm';
+        return '\APP\plugins\generic\zenodo\classes\form\ZenodoSettingsForm';
     }
 
     /**
-     * @param Submission $object
+     * @copydoc \PKP\plugins\interfaces\HasTaskScheduler::registerSchedules()
+     */
+    public function registerSchedules(PKPScheduler $scheduler): void
+    {
+        $scheduler
+            ->addSchedule(new ZenodoInfoSender())
+            ->daily()
+            ->name(ZenodoInfoSender::class)
+            ->withoutOverlapping();
+    }
+
+    /**
+     * @param Submission|Publication $object
      * @param Context $context
      * @param string $jsonString Export JSON string
      *
@@ -149,8 +171,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
             return [['plugins.importexport.zenodo.api.error.noDoi']];
         }
 
+        $isPublication = $object instanceof Publication;
+
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
+        $doiVersioning = $context->getData(Context::SETTING_DOI_VERSIONING);
 
         $isUpdate = false;
         $isPublished = false;
@@ -216,6 +241,23 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
         $object->setData($this->getIdSettingName(), $zenodoRecId);
         $this->updateObject($object);
+
+        if ($object instanceof Publication) {
+            // set Zenodo ID for all other sibling minor publications.
+            $editParams = [
+                $this->getIdSettingName() => $zenodoRecId,
+            ];
+            Repo::publication()->getCollector()
+                ->filterBySubmissionIds([$object->getData('submissionId')])
+                ->filterByVersionStage($object->getData('versionStage'))
+                ->filterByVersionMajor($object->getData('versionMajor'))
+                ->getMany()
+                ->filter(function (Publication $publication) use ($object) {
+                    return $publication->getId() != $object->getId();
+                })
+                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
+        }
+
         return true;
     }
 
@@ -230,6 +272,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         $context = $request->getContext();
         $path = ['plugin', $this->getName()];
         if ($request->getUserVar(PubObjectsExportPlugin::EXPORT_ACTION_DEPOSIT)) {
+            $filter = $context->getData(Context::SETTING_DOI_VERSIONING)
+                ? 'publication=>zenodo-json'
+                : 'article=>zenodo-json';
             $resultErrors = [];
             foreach ($objects as $object) {
                 // Get the JSON
@@ -286,7 +331,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      * @return string JSON variable.
      * @throws Exception
      */
-    public function exportJSON(Submission $object, string $filter, Context $context): string
+    public function exportJSON(Submission|Publication $object, string $filter, Context $context): string
     {
         $filterDao = DAORegistry::getDAO('FilterDAO'); /** @var FilterDAO $filterDao */
         $exportFilters = $filterDao->getObjectsByGroup($filter);
@@ -297,7 +342,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
         }
 
         $exportFilter = array_shift($exportFilters); /** @var ZenodoJsonFilter $exportFilter */
-        $exportDeployment = $this->_instantiateExportDeployment($context); /** @var ZenodoExportDeployment $exportDeployment */
+        $exportDeployment = $this->_instantiateExportDeployment($context);
         $exportFilter->setDeployment($exportDeployment);
         return $exportFilter->execute($object, true);
     }
@@ -369,21 +414,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
     /**
      * Get a list of additional setting names that should be stored with the objects.
      */
-    protected function _getObjectAdditionalSettings(): array
+    public function getObjectAdditionalSettings(): array
     {
-        return [$this->getDepositStatusSettingName(), $this->getIdSettingName()];
-    }
-
-    /**
-     * @copydoc \PKP\plugins\interfaces\HasTaskScheduler::registerSchedules()
-     */
-    public function registerSchedules(PKPScheduler $scheduler): void
-    {
-        $scheduler
-            ->addSchedule(new ZenodoInfoSender())
-            ->daily()
-            ->name(ZenodoInfoSender::class)
-            ->withoutOverlapping();
+        return array_merge(parent::getObjectAdditionalSettings(), [
+            $this->getIdSettingName(),
+            $this->getDepositStatusSettingName()
+        ]);
     }
 
     protected function depositRecord(
@@ -481,7 +517,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin
      * Send files to the Zenodo API.
      * https://inveniordm-dev.docs.cern.ch/reference/rest_api_quickstart/#upload-a-file
      */
-    protected function depositFiles(Submission $object, string $url, string $apiKey, int $zenodoRecId): bool|array
+    protected function depositFiles(Submission|Publication $object, string $url, string $apiKey, int $zenodoRecId): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
         $filesMetadataUrl = $url . '/' . $zenodoRecId . '/draft/files';

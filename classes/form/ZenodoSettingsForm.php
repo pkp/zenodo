@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/zenodo/classes/form/ZenodoSettingsForm.php
+ * @file plugins/generic/zenodo/classes/form/ZenodoSettingsForm.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -12,19 +12,19 @@
  * @brief Form for journal managers to set up the Zenodo plugin
  */
 
-namespace APP\plugins\importexport\zenodo\classes\form;
+namespace APP\plugins\generic\zenodo\classes\form;
 
 use APP\core\Application;
-use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
+use APP\plugins\generic\zenodo\ZenodoExportPlugin;
+use APP\plugins\PubObjectsExportSettingsForm;
 use Exception;
 use GuzzleHttp\Exception\GuzzleException;
-use PKP\form\Form;
 use PKP\form\validation\FormValidatorCSRF;
 use PKP\form\validation\FormValidatorCustom;
 use PKP\form\validation\FormValidatorPost;
 use PKP\plugins\Plugin;
 
-class ZenodoSettingsForm extends Form
+class ZenodoSettingsForm extends PubObjectsExportSettingsForm
 {
     public int $contextId;
     public Plugin $plugin;
@@ -127,14 +127,8 @@ class ZenodoSettingsForm extends Form
         }
     }
 
-
-    //
-    // Public helper methods.
-    //
     /**
-     * Get form fields.
-     *
-     * @return array (field name => field type)
+     * @copydoc PubObjectsExportSettingsForm::getFormFields()
      */
     public function getFormFields(): array
     {
@@ -150,7 +144,7 @@ class ZenodoSettingsForm extends Form
     }
 
     /**
-     * If the form field is optional.
+     * @copydoc PubObjectsExportSettingsForm::isOptional()
      */
     public function isOptional(string $settingName): bool
     {

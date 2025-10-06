@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/zenodo/ZenodoInfoSender.php
+ * @file plugins/generic/zenodo/ZenodoInfoSender.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -12,11 +12,14 @@
  * @brief Scheduled task to send deposits to Zenodo.
  */
 
-namespace APP\plugins\importexport\zenodo;
+namespace APP\plugins\generic\zenodo;
 
 use APP\core\Application;
 use APP\journal\Journal;
+use APP\publication\Publication;
+use APP\submission\Submission;
 use Exception;
+use PKP\context\Context;
 use PKP\plugins\PluginRegistry;
 use PKP\scheduledTask\ScheduledTask;
 use PKP\scheduledTask\ScheduledTaskHelper;
@@ -53,6 +56,7 @@ class ZenodoInfoSender extends ScheduledTask
 
     /**
      * @copydoc ScheduledTask::executeActions()
+     * @throws Exception
      */
     public function executeActions(): bool
     {
@@ -66,11 +70,16 @@ class ZenodoInfoSender extends ScheduledTask
         foreach ($journals as $journal) {
             // load pubIds for this journal
             PluginRegistry::loadCategory('pubIds', true, $journal->getId());
-            // Get unregistered articles
-            $unregisteredArticles = $plugin->getUnregisteredArticles($journal);
-            // If there are articles to be deposited
-            if (count($unregisteredArticles)) {
-                $this->registerObjects($unregisteredArticles, 'article=>zenodo-json', $journal);
+            if ($journal->getData(Context::SETTING_DOI_VERSIONING)) {
+                $depositablePublications = $plugin->getAllDepositablePublications($journal);
+                if (count($depositablePublications)) {
+                    $this->registerObjects($depositablePublications, 'publication=>zenodo-json', $journal);
+                }
+            } else {
+                $depositableArticles = $plugin->getAllDepositableArticles($journal);
+                if (count($depositableArticles)) {
+                    $this->registerObjects($depositableArticles, 'article=>zenodo-json', $journal);
+                }
             }
         }
 
@@ -80,15 +89,17 @@ class ZenodoInfoSender extends ScheduledTask
     /**
      * Get all journals that meet the requirements to have
      * their articles automatically sent to Zenodo.
+     *
+     * @return array<Journal>
      */
-    public function getJournals(): array
+    protected function getJournals(): array
     {
         $plugin = $this->plugin;
         $contextDao = Application::getContextDAO();
         $journalFactory = $contextDao->getAll(true);
 
         $journals = [];
-        while ($journal = $journalFactory->next()) {
+        while ($journal = $journalFactory->next()) { /** @var  Journal $journal */
             $journalId = $journal->getId();
             if (
                 !$plugin->getSetting($journalId, 'apiKey') ||
@@ -103,10 +114,12 @@ class ZenodoInfoSender extends ScheduledTask
 
 
     /**
-     * Register objects
+     * Register articles or publications
+     *
+     * @param array<Submission|Publication> $objects
      * @throws Exception
      */
-    public function registerObjects(array $objects, string $filter, Journal $journal): void
+    protected function registerObjects(array $objects, string $filter, Journal $journal): void
     {
         $plugin = $this->plugin;
         foreach ($objects as $object) {
@@ -124,7 +137,7 @@ class ZenodoInfoSender extends ScheduledTask
      * Add execution log entry
      * @throws Exception
      */
-    public function addLogEntry(array $errors): void
+    protected function addLogEntry(array $errors): void
     {
         foreach ($errors as $error) {
             if (!is_array($error) || !count($error) > 0) {

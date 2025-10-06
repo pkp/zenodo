@@ -1,5 +1,5 @@
 {**
- * plugins/importexport/zenodo/templates/settingsForm.tpl
+ * plugins/generic/zenodo/templates/settingsForm.tpl
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky

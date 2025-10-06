@@ -2,7 +2,7 @@
 <!DOCTYPE filterConfig SYSTEM "../../../../lib/pkp/dtd/filterConfig.dtd">
 
 <!--
-  * plugins/importexport/zenodo/filter/filterConfig.xml
+  * plugins/generic/zenodo/filter/filterConfig.xml
   *
   * Copyright (c) 2025 Simon Fraser University
   * Copyright (c) 2025 John Willinsky
@@ -19,12 +19,24 @@
 			description="plugins.importexport.zenodo.description"
 			inputType="class::classes.submission.Submission"
 			outputType="primitive::string" />
+        <!-- Zenodo JSON publication output -->
+        <filterGroup
+            symbolic="publication=>zenodo-json"
+            displayName="plugins.importexport.zenodo.displayName"
+            description="plugins.importexport.zenodo.description"
+            inputType="class::classes.publication.Publication"
+            outputType="primitive::string" />
 	</filterGroups>
 	<filters>
 		<!-- Zenodo JSON article output -->
 		<filter
 			inGroup="article=>zenodo-json"
-			class="APP\plugins\importexport\zenodo\filter\ZenodoJsonFilter"
+			class="APP\plugins\generic\zenodo\filter\ZenodoJsonFilter"
 			isTemplate="0" />
+        <!-- Zenodo JSON publication output -->
+        <filter
+            inGroup="publication=>zenodo-json"
+            class="APP\plugins\generic\zenodo\filter\ZenodoJsonFilter"
+            isTemplate="0" />
 	</filters>
 </filterConfig>

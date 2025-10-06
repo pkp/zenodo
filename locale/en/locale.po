@@ -123,3 +123,9 @@ msgstr ""
 "Usage:\n"
 "{$scriptName} {$pluginName} export [xmlFileName] [journal_path] articles "
 "objectId1 [objectId2] ...\n"
+
+msgid "plugins.generic.zenodo.displayName"
+msgstr "Zenodo Plugin"
+
+msgid "plugins.generic.zenodo.description"
+msgstr "Exports articles or article versions to Zenodo."

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/zenodo/ZenodoExportDeployment.php
+ * @file plugins/generic/zenodo/ZenodoExportDeployment.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -13,19 +13,15 @@
  * application's specifics.
  */
 
-namespace APP\plugins\importexport\zenodo;
+namespace APP\plugins\generic\zenodo;
 
-use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
 use APP\plugins\PubObjectCache;
 use PKP\context\Context;
 use PKP\plugins\Plugin;
 
 class ZenodoExportDeployment
 {
-    /** @var Context The current import/export context */
     public Context $context;
-
-    /** @var Plugin The current import/export plugin */
     public Plugin $plugin;
 
     /**
@@ -39,10 +35,8 @@ class ZenodoExportDeployment
     /**
      * Constructor
      *
-     * @param Context $context
-     * @param ZenodoExportPlugin $plugin
      */
-    public function __construct($context, $plugin)
+    public function __construct(Context $context, ZenodoExportPlugin $plugin)
     {
         $this->setContext($context);
         $this->setPlugin($plugin);
@@ -56,7 +50,7 @@ class ZenodoExportDeployment
      */
     public function getRootElementName(): string
     {
-        return 'records';
+        return 'metadata';
     }
 
     //

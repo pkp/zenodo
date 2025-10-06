@@ -1,14 +1,12 @@
-<?php
-
-/**
- * @file plugins/generic/zenodo/index.php
+{**
+ * plugins/generic/zenodo/templates/statusMessage.tpl
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
  * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
  *
- * @brief Wrapper for Zenodo export plugin.
+ * Zenodo failure messages
  *
- */
+ *}
 
-return new \APP\plugins\generic\zenodo\ZenodoPlugin();
+<pre style="white-space: pre-wrap;">{$statusMessage}</pre>

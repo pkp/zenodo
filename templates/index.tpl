@@ -1,5 +1,5 @@
 {**
- * @file plugins/importexport/zenodo/index.tpl
+ * @file plugins/generic/zenodo/index.tpl
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -30,7 +30,11 @@
 		<ul>
 			<li><a href="#settings-tab">{translate key="plugins.importexport.common.settings"}</a></li>
 			{if $allowExport}
-				<li><a href="#exportSubmissions-tab">{translate key="plugins.importexport.common.export.articles"}</a></li>
+				{if $doiVersioning}
+					<li><a href="#exportPublications-tab">{translate key="plugins.importexport.common.export.publications"}</a></li>
+				{else}
+					<li><a href="#exportSubmissions-tab">{translate key="plugins.importexport.common.export.articles"}</a></li>
+				{/if}
 			{/if}
 		</ul>
 		<div id="settings-tab">
@@ -50,33 +54,66 @@
 			{load_url_in_div id="zenodoSettingsGridContainer" url=$zenodoSettingsGridUrl}
 		</div>
 		{if $allowExport}
-			<div id="exportSubmissions-tab">
-				<script type="text/javascript">
-					$(function() {ldelim}
-						// Attach the form handler.
-						$('#exportSubmissionXmlForm').pkpHandler('$.pkp.controllers.form.FormHandler');
-					{rdelim});
-				</script>
-				<form id="exportSubmissionXmlForm" class="pkp_form" action="{plugin_url path="exportSubmissions"}" method="post">
-					{csrf}
-					<input type="hidden" name="tab" value="exportSubmissions-tab" />
-					{fbvFormArea id="submissionsXmlForm"}
-						{capture assign=submissionsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.submissions.ExportPublishedSubmissionsListGridHandler" op="fetchGrid" plugin="zenodo" category="importexport" escape=false}{/capture}
-						{load_url_in_div id="submissionsListGridContainer" url=$submissionsListGridUrl}
+			{if $doiVersioning}
+				<div id="exportPublications-tab">
+					<script type="text/javascript">
+						$(function() {ldelim}
+							// Attach the form handler.
+							$('#exportPublicationXmlForm').pkpHandler('$.pkp.controllers.form.FormHandler');
+							{rdelim});
+					</script>
+					<form id="exportPublicationXmlForm" class="pkp_form" action="{plugin_url path="exportPublications"}" method="post">
+						{csrf}
+						<input type="hidden" name="tab" value="exportPublications-tab" />
+						{fbvFormArea id="publicationsXmlForm"}
+						{capture assign=publicationsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.publications.ExportPublishedPublicationsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
+						{load_url_in_div id="publicationsListGridContainer" url=$publicationsListGridUrl}
+						{fbvFormSection list="true"}
+						{fbvElement type="checkbox" id="validation" label="plugins.importexport.common.validation" checked=$validation|default:true}
+						{/fbvFormSection}
 						{if !empty($actionNames)}
 							{fbvFormSection}
-							<ul class="export_actions">
-								{foreach from=$actionNames key=action item=actionName}
-									<li class="export_action">
-										{fbvElement type="submit" label="$actionName" id="$action" name="$action" value="1" class="$action" translate=false inline=true}
-									</li>
-								{/foreach}
-							</ul>
+								<ul class="export_actions">
+									{foreach from=$actionNames key=action item=actionName}
+										<li class="export_action">
+											{fbvElement type="submit" label="$actionName" id="$action" name="$action" value="1" class="$action" translate=false inline=true}
+										</li>
+									{/foreach}
+								</ul>
 							{/fbvFormSection}
 						{/if}
-					{/fbvFormArea}
-				</form>
-			</div>
+						{/fbvFormArea}
+					</form>
+				</div>
+			{else}
+				<div id="exportSubmissions-tab">
+					<script type="text/javascript">
+						$(function() {ldelim}
+							// Attach the form handler.
+							$('#exportSubmissionXmlForm').pkpHandler('$.pkp.controllers.form.FormHandler');
+						{rdelim});
+					</script>
+					<form id="exportSubmissionXmlForm" class="pkp_form" action="{plugin_url path="exportSubmissions"}" method="post">
+						{csrf}
+						<input type="hidden" name="tab" value="exportSubmissions-tab" />
+						{fbvFormArea id="submissionsXmlForm"}
+							{capture assign=submissionsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.submissions.ExportPublishedSubmissionsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
+							{load_url_in_div id="submissionsListGridContainer" url=$submissionsListGridUrl}
+							{if !empty($actionNames)}
+								{fbvFormSection}
+								<ul class="export_actions">
+									{foreach from=$actionNames key=action item=actionName}
+										<li class="export_action">
+											{fbvElement type="submit" label="$actionName" id="$action" name="$action" value="1" class="$action" translate=false inline=true}
+										</li>
+									{/foreach}
+								</ul>
+								{/fbvFormSection}
+							{/if}
+						{/fbvFormArea}
+					</form>
+				</div>
+			{/if}
 		{/if}
 	</div>
 {/block}

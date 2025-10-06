@@ -13,8 +13,8 @@ Compatible with OJS 3.6 and later.
 ### For Development
 
 - Create [a Zenodo sandbox account and API key](https://sandbox.zenodo.org)
-- Copy the plugin files to `plugins/importexport/zenodo`
-- Run the installation tool: `php lib/pkp/tools/installPluginVersion.php plugins/importexport/zenodo/version.xml`
+- Copy the plugin files to `plugins/generic/zenodo`
+- Run the installation tool: `php lib/pkp/tools/installPluginVersion.php plugins/generic/zenodo/version.xml`
 - Set Zenodo plugin settings in Tools > Zenodo Export Plugin:
   - Enter the API key from your sandbox account
   - Enable test mode

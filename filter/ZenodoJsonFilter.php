@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file plugins/importexport/zenodo/filter/ZenodoJsonFilter.php
+ * @file plugins/generic/zenodo/filter/ZenodoJsonFilter.php
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -9,12 +9,12 @@
  *
  * @class ZenodoJsonFilter
  *
- * @ingroup plugins_importexport_zenodo
+ * @ingroup plugins_generic_zenodo
  *
  * @brief Class that converts an Article to a Zenodo JSON string.
  */
 
-namespace APP\plugins\importexport\zenodo\filter;
+namespace APP\plugins\generic\zenodo\filter;
 
 use APP\author\Author;
 use APP\core\Application;
@@ -22,8 +22,8 @@ use APP\decision\Decision;
 use APP\facades\Repo;
 use APP\issue\Issue;
 use APP\journal\Journal;
-use APP\plugins\importexport\zenodo\ZenodoExportDeployment;
-use APP\plugins\importexport\zenodo\ZenodoExportPlugin;
+use APP\plugins\generic\zenodo\ZenodoExportDeployment;
+use APP\plugins\generic\zenodo\ZenodoExportPlugin;
 use APP\publication\Publication;
 use APP\submission\Submission;
 use Carbon\Carbon;
@@ -39,6 +39,7 @@ use PKP\galley\Galley;
 use PKP\i18n\LocaleConversion;
 use PKP\plugins\importexport\PKPImportExportFilter;
 use PKP\plugins\PluginRegistry;
+use PKP\submission\PKPSubmission;
 
 class ZenodoJsonFilter extends PKPImportExportFilter
 {
@@ -57,7 +58,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     // Implement template methods from Filter
     //
     /**
-     * @param Submission $pubObject
+     * @param Submission|Publication $pubObject
      *
      * @return string JSON
      * @throws Exception
@@ -74,7 +75,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $cache = $plugin->getCache();
 
         $submissionId = $pubObject->getId();
-        $publication = $pubObject->getCurrentPublication();
+        if (is_a($pubObject, 'Submission')) {
+            $publication = $pubObject->getCurrentPublication();
+        } elseif (is_a($pubObject, 'Publication')) {
+            $publication = $pubObject; /** @var Publication $publication */
+        } else {
+            throw new Exception('Invalid object type');
+        }
+
         $publicationLocale = $publication->getData('locale');
 
         $issueId = $publication->getData('issueId');
@@ -150,7 +158,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Publication date
         if ($publication->getData('datePublished')) {
             $article['metadata']['publication_date'] = Carbon::parse($publication->getData('datePublished'))->format('Y-m-d');
-        } elseif ($issue->getDatePublished()) {
+        } elseif ($issue?->getDatePublished()) {
             $article['metadata']['publication_date'] = Carbon::parse($issue->getDatePublished())->format('Y-m-d');
         }
 
@@ -207,15 +215,28 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // FullText URL relation
         $request = Application::get()->getRequest();
-        $url = $request->getDispatcher()->url(
-            $request,
-            Application::ROUTE_PAGE,
-            $context->getPath(),
-            'article',
-            'view',
-            [$submissionId],
-            urlLocaleForPage: ''
-        );
+        if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
+            $url = $request->getDispatcher()->url(
+                $request,
+                Application::ROUTE_PAGE,
+                $context->getPath(),
+                'article',
+                'view',
+                [$submissionId, 'version', $publication->getId()],
+                urlLocaleForPage: ''
+            );
+        } else {
+            $url = $request->getDispatcher()->url(
+                $request,
+                Application::ROUTE_PAGE,
+                $context->getPath(),
+                'article',
+                'view',
+                [$submissionId],
+                urlLocaleForPage: ''
+            );
+        }
+
         $article['metadata']['related_identifiers'][] = [
             'identifier' => $url,
             'relation_type' => [
