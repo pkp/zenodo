@@ -279,16 +279,36 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //     'scheme' => 'doi',
         // ];
 
-        // Version relation
-        // DOI versioning is only supported for Zenodo DOIs
-        // @todo once DOI versioning is implemented, add relations for all version DOIs
-        // $article['metadata']['related_identifiers'][] = [
-        //     'relation_type' => [
-        //         'id' => 'isVersionOf'
-        //     ],
-        //     'identifier' => '', // DOI
-        //     'scheme' => 'doi',
-        // ];
+        // Version relations
+        if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
+            $previousPublications = Repo::publication()->getCollector() /* @var $lastPublication Publication */
+                ->filterBySubmissionIds([$publication->getData('submissionId')])
+                ->filterByVersionStage($publication->getData('versionStage'))
+                ->filterByStatus([PKPSubmission::STATUS_PUBLISHED])
+                ->getMany();
+
+            if (!empty($previousPublications)) {
+                $previousDois = [];
+                foreach ($previousPublications as $previousPublication) {
+                    if (
+                        (int)$previousPublication->getData('versionMajor')
+                        < (int)$publication->getData('versionMajor')
+                    ) {
+                        $previousDois[] = $previousPublication->getDoi();
+                    }
+                }
+
+                foreach (array_unique($previousDois) as $previousDoi) {
+                    $article['metadata']['related_identifiers'][] = [
+                        'relation_type' => [
+                            'id' => 'isversionof'
+                        ],
+                        'identifier' => $previousDoi,
+                        'scheme' => 'doi',
+                    ];
+                }
+            }
+        }
 
         // Keywords and Subjects
         $keywords = $publication->getData('keywords', $publicationLocale) ?? [];

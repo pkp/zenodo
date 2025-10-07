@@ -50,6 +50,7 @@
 			<p class="">
 				<a href="https://zenodo.org/signup/" target="_blank">{translate key="plugins.importexport.zenodo.export.createAccount"}</a>
 			</p>
+			<br/>
 			{capture assign=zenodoSettingsGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.settings.plugins.settingsPluginGridHandler" op="manage" plugin="ZenodoExportPlugin" category="importexport" verb="index" escape=false}{/capture}
 			{load_url_in_div id="zenodoSettingsGridContainer" url=$zenodoSettingsGridUrl}
 		</div>

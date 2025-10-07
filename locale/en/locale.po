@@ -18,7 +18,7 @@ msgid "plugins.importexport.zenodo.description"
 msgstr "Export journal articles to Zenodo."
 
 msgid "plugins.importexport.zenodo.export.createAccount"
-msgstr "Create a Zenodo account."
+msgstr "Create a Zenodo account to get started."
 
 msgid "plugins.importexport.zenodo.registrationIntro"
 msgstr ""
@@ -31,6 +31,9 @@ msgstr "Zenodo API Key"
 msgid "plugins.importexport.zenodo.settings.form.community"
 msgstr "Zenodo Community"
 
+msgid "plugins.importexport.zenodo.settings.form.community.heading"
+msgstr "Community Settings"
+
 msgid "plugins.importexport.zenodo.settings.form.community.description"
 msgstr ""
 "The Zenodo community to submit records to. Please enter the community's unique identifier; "
@@ -41,20 +44,20 @@ msgid "plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.de
 msgstr ""
 "<strong>Accept Community Reviews</strong>: Automatically accept review requests to this Zenodo community. "
 "This will only apply to communities which require submissions to be reviewed. "
-"Only enable this setting if you have permissions in Zenodo to publish records in this community. This will also publish the record, "
+"Only enable this setting if you have permissions in Zenodo to publish records in this community. This will publish the record, "
 "and can not be deleted once published."
 
 msgid "plugins.importexport.zenodo.settings.form.automaticRegistration.description"
 msgstr ""
-"<strong>Automatic Deposit</strong>: Deposit articles automatically to Zenodo. Please note that this may "
+"<strong>Automatic Deposit</strong>: Deposit articles automatically to Zenodo. This may "
 "take a short amount of time after publication to process (e.g. depending on "
 "your cronjob configuration)."
 
 msgid "plugins.importexport.zenodo.settings.form.automaticPublishing.description"
 msgstr ""
 "<strong>Automatic Publishing</strong>: Publish records automatically in Zenodo. If not enabled, records "
-"will be created as drafts and can be published in the Zenodo platform. Records can not be deleted in Zenodo "
-" once they are published."
+"will be created as drafts and can be published in the Zenodo platform. Published records cannot be deleted except"
+" under special circumstances."
 
 msgid "plugins.importexport.zenodo.settings.form.doi.description"
 msgstr ""

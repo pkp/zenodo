@@ -167,15 +167,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         }
 
         $mintDoi = $this->mintZenodoDois($context);
-        if (!$mintDoi && !$object->getCurrentPublication()->getDoi()) {
+        $isPublication = $object instanceof Publication;
+        $doi = $isPublication ? $object->getDoi() : $object->getCurrentPublication()->getDoi();
+        if (!$mintDoi && !$doi) {
             return [['plugins.importexport.zenodo.api.error.noDoi']];
         }
 
-        $isPublication = $object instanceof Publication;
-
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
-        $doiVersioning = $context->getData(Context::SETTING_DOI_VERSIONING);
 
         $isUpdate = false;
         $isPublished = false;
@@ -184,7 +183,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             $isPublished = $this->isRecordPublished($existingZenodoRecId, $recordsApiUrl);
         }
 
-        $zenodoRecId = $this->depositRecord($jsonString, $recordsApiUrl, $apiKey, $isUpdate, $isPublished, $existingZenodoRecId);
+        $zenodoRecId = $this->depositRecord($jsonString, $object, $recordsApiUrl, $apiKey, $isUpdate, $isPublished, $existingZenodoRecId);
         if (is_array($zenodoRecId)) {
             // Deposit or update has failed @todo more here?
             return $zenodoRecId;
@@ -192,15 +191,18 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
         if ($isUpdate && $isPublished) {
             // try to re-publish the updated record
-            $republishUpdatedRecord = $this->publishZenodoRecord($zenodoRecId, $recordsApiUrl, $apiKey);
+            $republishUpdatedRecord = $this->publishZenodoRecord($object, $zenodoRecId, $recordsApiUrl, $apiKey);
             if (is_array($republishUpdatedRecord)) {
                 return $republishUpdatedRecord;
             }
         }
+
+        // note: can't update files on published records
+        if (!$isUpdate) { // @todo disable file deposit for updates as it will fail if the filename exists already - maybe we should delete all files or the record first in this case
             $filesDeposit = $this->depositFiles($object, $recordsApiUrl, $apiKey, $zenodoRecId);
             if (is_array($filesDeposit)) {
                 // File deposit has failed, try to delete the record in Zenodo then return the error
-                $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
+                $this->deleteRecord($object, $zenodoRecId, $recordsApiUrl, $apiKey);
                 return $filesDeposit;
             }
         }
@@ -227,7 +229,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         // (e.g. record may be published already)
         $autoPublish = $this->automaticPublishing($context);
         if ($autoPublish) {
-            $published = $this->publishZenodoRecord($zenodoRecId, $recordsApiUrl, $apiKey);
+            $published = $this->publishZenodoRecord($object, $zenodoRecId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
                 // @todo custom error message? e.g draft was created but publishing failed
                 // in this case there is still a draft - delete it then return the error
@@ -424,6 +426,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
     protected function depositRecord(
         string $json,
+        Submission|Publication $object,
         string $url,
         string $apiKey,
         bool $isUpdate = false,
@@ -439,7 +442,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
         // if the record is published, create a new draft first that we will then update
         if ($isPublished) {
-            $this->createDraftFromPublishedRecord($url, $apiKey, $zenodoRecId);
+            $this->createDraftFromPublishedRecord($object, $url, $apiKey, $zenodoRecId);
         }
 
         // Settings depending on whether we are updating or creating a record
@@ -459,10 +462,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ]
             );
         } catch (GuzzleException | Exception $e) {
+            $returnMessage = $e->hasResponse()
+                ? $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')'
+                : $e->getMessage();
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
         }
 
         if ($response->getStatusCode() != $successResponse) {
+            $returnMessage = $response->getBody() . ' (' . $response->getStatusCode() . ' ' . $response->getReasonPhrase() . ')';
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [[
                 'plugins.importexport.zenodo.register.error.mdsError',
                 $response->getStatusCode() . ' - ' . $response->getBody()
@@ -477,6 +486,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * Create a new draft record for a published record in Zenodo.
      */
     protected function createDraftFromPublishedRecord(
+        Submission|Publication $object,
         string $url,
         string $apiKey,
         string $zenodoRecId
@@ -499,10 +509,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ]
             );
         } catch (GuzzleException | Exception $e) {
+            $returnMessage = $e->hasResponse()
+                ? $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')'
+                : $e->getMessage();
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [['plugins.importexport.zenodo.register.error.mdsError', $e->getMessage()]];
         }
 
         if ($response->getStatusCode() != self::ZENODO_API_DEPOSIT_CREATED) {
+            $returnMessage = $response->getBody() . ' (' . $response->getStatusCode() . ' ' . $response->getReasonPhrase() . ')';
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [[
                 'plugins.importexport.zenodo.register.error.mdsError',
                 $response->getStatusCode() . ' - ' . $response->getBody()
@@ -529,7 +545,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             'Authorization' => 'Bearer ' . $apiKey,
         ];
 
-        $publication = $object->getCurrentPublication();
+        $publication = $object instanceof Publication ? $object : $object->getCurrentPublication();
         $pubLocale = $publication->getData('locale');
 
         foreach ($publication->getData('galleys') as $galley) { /** @var Galley $galley */
@@ -665,7 +681,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * Delete a draft record in Zenodo.
      * https://inveniordm-dev.docs.cern.ch/reference/rest_api_drafts_records/#deletediscard-a-draft-record
      */
-    protected function deleteRecord(int $zenodoRecId, string $url, string $apiKey): bool|array
+    protected function deleteRecord(Submission|Publication $object, int $zenodoRecId, string $url, string $apiKey): bool|array
     {
         $httpClient = Application::get()->getHttpClient();
         $deleteRecordUrl = $url . '/' . $zenodoRecId . '/draft';
@@ -690,6 +706,22 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 'plugins.importexport.zenodo.api.error.recordDeleteError',
                 $deleteRecordResponse->getStatusCode() . ' - ' . $deleteRecordResponse->getBody()
             ]];
+        }
+
+        // delete Zenodo ID for all other sibling minor publications
+        if ($object instanceof Publication) {
+            $editParams = [
+                $this->getIdSettingName() => null,
+            ];
+            Repo::publication()->getCollector()
+                ->filterBySubmissionIds([$object->getData('submissionId')])
+                ->filterByVersionStage($object->getData('versionStage'))
+                ->filterByVersionMajor($object->getData('versionMajor'))
+                ->getMany()
+                ->filter(function (Publication $publication) use ($object) {
+                    return $publication->getId() != $object->getId();
+                })
+                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
         }
         return true;
     }
@@ -727,7 +759,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     /*
      * Publish a Zenodo record.
      */
-    public function publishZenodoRecord(int $zenodoRecId, string $url, string $apiKey): string|array
+    public function publishZenodoRecord(Submission|Publication $object, $zenodoRecId, string $url, string $apiKey): string|array
     {
         $httpClient = Application::get()->getHttpClient();
         $publishUrl = $url . '/' . $zenodoRecId . '/draft/actions/publish';
@@ -745,10 +777,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ]
             );
         } catch (GuzzleException | Exception $e) {
+            $returnMessage = $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')';
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [['plugins.importexport.zenodo.api.error.publishError', $e->getMessage()]];
         }
 
         if ($publishResponse->getStatusCode() != self::ZENODO_API_ACCEPTED) {
+            $returnMessage = $publishResponse->getBody() . ' (' . $publishResponse->getStatusCode() . ' ' . $publishResponse->getReasonPhrase() . ')';
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
             return [[
                 'plugins.importexport.zenodo.api.error.publishError',
                 $publishResponse->getStatusCode() . ' - ' . $publishResponse->getBody()

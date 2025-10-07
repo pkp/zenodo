@@ -38,13 +38,13 @@
 				{fbvElement type="checkbox" id="testMode" label="plugins.importexport.zenodo.settings.form.testMode.description" checked=$testMode|compare:true}
 			{/fbvFormSection}
 		{/fbvFormArea}
-		{fbvFormArea id="zenodoCommunitySettingsFormArea"}
+		{fbvFormArea title="plugins.importexport.zenodo.settings.form.community.heading" id="zenodoCommunitySettingsFormArea"}
+			<br/>
 			{fbvFormSection}
 				<p class="help">
 					{translate key="plugins.importexport.zenodo.settings.form.community.description"}
 				</p>
 				{fbvElement type="text" id="community" value=$community label="plugins.importexport.zenodo.settings.form.community" maxlength="100" size=$fbvStyles.size.MEDIUM}
-				<br/>
 			{/fbvFormSection}
 			{fbvFormSection list="true"}
 				{fbvElement type="checkbox" id="automaticPublishingCommunity" label="plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.description" checked=$automaticPublishingCommunity|compare:true}
