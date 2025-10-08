@@ -19,13 +19,13 @@
 			description="plugins.importexport.zenodo.description"
 			inputType="class::classes.submission.Submission"
 			outputType="primitive::string" />
-        <!-- Zenodo JSON publication output -->
-        <filterGroup
-            symbolic="publication=>zenodo-json"
-            displayName="plugins.importexport.zenodo.displayName"
-            description="plugins.importexport.zenodo.description"
-            inputType="class::classes.publication.Publication"
-            outputType="primitive::string" />
+		<!-- Zenodo JSON publication output -->
+		<filterGroup
+			symbolic="publication=>zenodo-json"
+			displayName="plugins.importexport.zenodo.displayName"
+			description="plugins.importexport.zenodo.description"
+			inputType="class::classes.publication.Publication"
+			outputType="primitive::string" />
 	</filterGroups>
 	<filters>
 		<!-- Zenodo JSON article output -->
@@ -33,10 +33,10 @@
 			inGroup="article=>zenodo-json"
 			class="APP\plugins\generic\zenodo\filter\ZenodoJsonFilter"
 			isTemplate="0" />
-        <!-- Zenodo JSON publication output -->
-        <filter
-            inGroup="publication=>zenodo-json"
-            class="APP\plugins\generic\zenodo\filter\ZenodoJsonFilter"
-            isTemplate="0" />
+		<!-- Zenodo JSON publication output -->
+		<filter
+			inGroup="publication=>zenodo-json"
+			class="APP\plugins\generic\zenodo\filter\ZenodoJsonFilter"
+			isTemplate="0" />
 	</filters>
 </filterConfig>

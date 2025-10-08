@@ -45,7 +45,8 @@ a setting for automatic publishing, but it's important to note that a record in 
 
 If the [funding metadata plugin](https://github.com/ajnyga/funding) is installed and enabled, the plugin will
 attempt to add funding metadata to the exported record. Only funding metadata which is supported by Zenodo will be
-included in the exported record.
+included in the exported record. The ROR API is used to look up ROR IDs for funders, as the
+funding plugin currently uses DOIs for funders.
 
 ### Embargoes and Restricted Data
 
@@ -56,7 +57,8 @@ only accessible via a subscription model, then the data will be set as restricte
 
 If a community is enabled in the plugin settings, the plugin will attempt to submit the record to the community in
 Zenodo. Depending on the community settings, the record may be published immediately or may be published after
-review.
+review. If the community submission fails for any reason, such as insufficient permissions or an API error,
+the record will still be exported to Zenodo and the status and identifier will be saved.
 
 ## License
 

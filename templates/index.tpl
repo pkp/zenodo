@@ -1,5 +1,5 @@
 {**
- * @file plugins/generic/zenodo/index.tpl
+ * @file plugins/generic/zenodo/templates/index.tpl
  *
  * Copyright (c) 2025 Simon Fraser University
  * Copyright (c) 2025 John Willinsky
@@ -69,9 +69,6 @@
 						{fbvFormArea id="publicationsXmlForm"}
 						{capture assign=publicationsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.publications.ExportPublishedPublicationsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
 						{load_url_in_div id="publicationsListGridContainer" url=$publicationsListGridUrl}
-						{fbvFormSection list="true"}
-							{fbvElement type="checkbox" id="validation" label="plugins.importexport.common.validation" checked=$validation|default:true}
-						{/fbvFormSection}
 						{if !empty($actionNames)}
 							{fbvFormSection}
 								<ul class="export_actions">

@@ -74,11 +74,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $plugin = $deployment->getPlugin();
         $cache = $plugin->getCache();
 
-        $submissionId = $pubObject->getId();
         if (is_a($pubObject, 'Submission')) {
             $publication = $pubObject->getCurrentPublication();
+            $submissionId = $pubObject->getId();
         } elseif (is_a($pubObject, 'Publication')) {
             $publication = $pubObject; /** @var Publication $publication */
+            $submissionId = $pubObject->getData('submissionId');
         } else {
             throw new Exception('Invalid object type');
         }
@@ -171,12 +172,15 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $citations = $publication->getData('citations') ?? [];
         if (!empty($citations)) {
             $citedIdentifiers = [];
-            foreach ($citations as $citation) { /* @var Citation $citation */
+            foreach ($citations as $citation) { /** @var Citation $citation */
                 $referenceData = [];
                 $referenceData['reference'] = $citation->getRawCitation();
 
                 // https://inveniordm.docs.cern.ch/reference/metadata/#identifier-schemes
                 // @todo add arxiv to list once format is fixed (should not be a url e.g. arXiv:2401.12345)
+                // @todo validate formats?
+                // https://github.com/inveniosoftware/idutils/blob/master/idutils/validators.py
+                // https://github.com/inveniosoftware/idutils/blob/master/idutils/utils.py
                 $supportedIdentifiers = [
                     'doi', 'handle', 'url', 'urn'
                 ];
@@ -222,7 +226,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 $context->getPath(),
                 'article',
                 'view',
-                [$submissionId, 'version', $publication->getId()],
+                [$publication->getData('urlPath') ?? $submissionId, 'version', $publication->getId()],
                 urlLocaleForPage: ''
             );
         } else {
@@ -232,7 +236,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 $context->getPath(),
                 'article',
                 'view',
-                [$submissionId],
+                [$publication->getData('urlPath') ?? $submissionId],
                 urlLocaleForPage: ''
             );
         }
@@ -281,13 +285,13 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Version relations
         if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
-            $previousPublications = Repo::publication()->getCollector() /* @var $lastPublication Publication */
+            $previousPublications = Repo::publication()->getCollector() /** @var $lastPublication Publication */
                 ->filterBySubmissionIds([$publication->getData('submissionId')])
                 ->filterByVersionStage($publication->getData('versionStage'))
                 ->filterByStatus([PKPSubmission::STATUS_PUBLISHED])
                 ->getMany();
 
-            if (!empty($previousPublications)) {
+            if (!$previousPublications->isEmpty()) {
                 $previousDois = [];
                 foreach ($previousPublications as $previousPublication) {
                     if (
@@ -333,7 +337,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Publication version
         $versionMajor = (string)$publication->getData('versionMajor');
         $versionMinor = (string)$publication->getData('versionMinor');
-        if (!is_null($versionMajor) && !is_null($versionMinor)) {
+        if (!empty($versionMajor) && !empty($versionMinor)) {
             $article['metadata']['version'] = $versionMajor . '.' . $versionMinor;
         }
 
@@ -349,11 +353,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Copyright statement
         if ($publication->getData('copyrightHolder', $publicationLocale) && $publication->getData('copyrightYear')) {
-            $copyrightHolder = $publication->getData('copyrightHolder', $publicationLocale);
-            $copyrightYear = $publication->getData('copyrightYear');
             $article['metadata']['copyright'] = __('submission.copyrightStatement', [
-                'copyrightHolder' => $copyrightHolder,
-                'copyrightYear' => $copyrightYear
+                'copyrightYear' => $publication->getData('copyrightYear'),
+                'copyrightHolder' => $publication->getData('copyrightHolder', $publicationLocale)
             ]);
         };
 
@@ -402,7 +404,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         return $json;
     }
 
-    /*
+    /**
      * Helper function for journal metadata.
      * https://inveniordm.docs.cern.ch/reference/metadata/#journal
      */
@@ -415,17 +417,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $journalData['title'] = $journalTitle;
 
         // ISSN
-        $issn = null;
         if ($context->getData('onlineIssn') != '') {
-            $issn = $context->getData('onlineIssn');
-        } elseif ($context->getData('issn') != '') {
-            $issn = $context->getData('issn');
+            $journalData['issn'] = $context->getData('onlineIssn');
         } elseif ($context->getData('printIssn') != '') {
-            $issn = $context->getData('printIssn');
-        }
-
-        if ($issn) {
-            $journalData['issn'] = $issn;
+            $journalData['issn'] = $context->getData('printIssn');
         }
 
         // Volume and Issue Number
@@ -445,13 +440,16 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $startPage = $publication->getStartingPage();
         $endPage = $publication->getEndingPage();
         if (isset($startPage) && $startPage !== '') {
-            $journalData['pages'] = $startPage . '-' . $endPage;
+            $journalData['pages'] = $startPage;
+            if (isset($endPage) && $endPage !== '') {
+                $journalData['pages'] = $startPage . '-' . $endPage;
+            }
         }
 
         return $journalData;
     }
 
-    /*
+    /**
      * Helper function for authors metadata
      */
     private function getAuthorsData(Publication $publication, string $publicationLocale): array
@@ -462,12 +460,16 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         foreach ($articleAuthors as $articleAuthor) { /** @var Author $articleAuthor */
             $author = [];
 
-            if ($articleAuthor->getGivenName($publicationLocale)) {
-                $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
-            }
-
-            if ($articleAuthor->getFamilyName($publicationLocale)) {
-                $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
+            // Family name is required by Zenodo
+            if (empty($articleAuthor->getFamilyName($publicationLocale))) {
+                $author['family_name'] = $articleAuthor->getGivenName($publicationLocale);
+            } else {
+                if ($articleAuthor->getGivenName($publicationLocale)) {
+                    $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
+                }
+                if ($articleAuthor->getFamilyName($publicationLocale)) {
+                    $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
+                }
             }
 
             $author['type'] = 'personal';
@@ -505,7 +507,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         return $authorsData;
     }
 
-    /*
+    /**
      * Helper function for funding metadata
      */
     private function getFundingData(int $submissionId, Context $context): false|array
@@ -518,6 +520,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         if (!PluginRegistry::getPlugin('generic', 'FundingPlugin')) {
             return false;
         }
+
+        // @todo look into COST Action from example
+
+        //  # Example of a COST Action (technically COST is a cascading grant, which is why it is not included in CORDIS). OSCARS is a similar example of cascading grants. We are in contact with COST in order to be able to import their grants into Zenodo and OpenAIRE database.
+        //   {
+        //    "award": {"title": {"en": "Blastocystis under One Health"}, "number": "CA21105", "identifiers": [{"identifier": "https://www.cost.eu/actions/CA21105/", "scheme": "url"}]},
+        //    "funder": {"id": "00k4n6c32"}
+        //   },
 
         $funderIds = DB::table('funders')
             ->where('submission_id', $submissionId)
@@ -532,7 +542,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
                     foreach ($awardIds as $awardId) {
                         if ($plugin->isValidAward($context, $funderRor, $awardId) === true) {
-                            // @todo look into COST Action from example
                             $fundData[] = [
                                 'award' => [
                                     'id' => $funderRor . '::' . $awardId,
@@ -549,12 +558,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         return $fundData ?? false;
     }
 
-    /*
+    /**
      * Find the funder ROR ID from the Crossref funder ID.
      * To be removed once the funding plugin has migrated to ROR.
      * e.g. https://api.ror.org/v2/organizations?query=%22501100002341%22
      */
-    private function getFunderROR(string $funderIdentification): string|bool|array
+    private function getFunderROR(string $funderIdentification): string|bool
     {
         $apiUrl = 'https://api.ror.org/v2/organizations';
         $funderId = str_replace('https://doi.org/10.13039/', '', $funderIdentification);
@@ -574,11 +583,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
             return $rorId ?? false;
         } catch (GuzzleException | Exception $e) {
-            return [['plugins.importexport.ror.api.error.awardError', $e->getMessage()]];
+            error_log(__('plugins.importexport.ror.api.error.awardError', ['param' => $e->getMessage()]));
+            return false;
         }
     }
 
-    /*
+    /**
      * Helper function for language metadata which collects publication language
      * and galley languages.
      */

@@ -37,7 +37,8 @@ msgstr "Community Settings"
 msgid "plugins.importexport.zenodo.settings.form.community.description"
 msgstr ""
 "The Zenodo community to submit records to. Please enter the community's unique identifier; "
-" for example, to submit to the community <a href=\"https://zenodo.org/community/eu\">https://zenodo.org/community/eu</a>, enter 'eu'. "
+" for example, to submit to the community <a href=\"https://zenodo.org/community/eu\">https://zenodo.org/community/eu</a>, enter 'eu'."
+" Only enter a community if you have permissions in Zenodo to submit records to it."
 " If the community does not require submissions to be reviewed, the record will automatically be approved and published."
 
 msgid "plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.description"
@@ -112,8 +113,14 @@ msgstr "Submitting the review request was not successful! The Zenodo API returne
 msgid "plugins.importexport.zenodo.api.error.acceptReviewError"
 msgstr "Accepting the review request was not successful! The Zenodo API returned an error: '{$param}'."
 
+msgid "plugins.importexport.zenodo.api.error.reviewCheckError"
+msgstr "Checking for a review request was not successful! The Zenodo API returned an error: '{$param}'."
+
 msgid "plugins.importexport.zenodo.api.error.noDoi"
 msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
+
+msgid "plugins.importexport.zenodo.register.error.draftPublishError"
+msgstr "Creating the draft from the published record was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.isPublished"
 msgstr "This record has been published in Zenodo and can not be updated."

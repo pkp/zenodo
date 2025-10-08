@@ -159,9 +159,9 @@ class ZenodoSettingsForm extends PubObjectsExportSettingsForm
         ]);
     }
 
-    /*
-    * Find and store the community ID in Zenodo, which we need to send records to a community.
-    */
+    /**
+     * Find and store the community ID in Zenodo, which we need to send records to a community.
+     */
     public function getCommunityId(string $communityName, int $contextId, Plugin $plugin): array|bool
     {
         $contextDao = Application::getContextDAO();
