@@ -185,7 +185,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
         $zenodoRecId = $this->depositRecord($jsonString, $object, $recordsApiUrl, $apiKey, $isUpdate, $isPublished, $existingZenodoRecId);
         if (is_array($zenodoRecId)) {
-            // Deposit or update has failed @todo more here?
             return $zenodoRecId;
         }
 
@@ -207,11 +206,10 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             }
         }
 
-        // Submit the record to a community
+        // Submit the record to a community (record may be published depending on settings)
         $communityId = $this->getCommunityId($context);
         if ($communityId) {
             if ($review = $this->createReview($zenodoRecId, $communityId, $recordsApiUrl, $apiKey)) {
-                // @todo depending on the community permissions, this can automatically publish the record - make sure this is clear to the user.
                 $requestId = $this->submitReview($zenodoRecId, $zenodoApiUrl, $apiKey);
                 $autoPublishCommunity = $this->automaticPublishingCommunity($context);
                 if (is_array($requestId)) {
@@ -223,18 +221,19 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             } elseif (is_array($review)) {
                 return $review;
             }
+            // re-check the published status in case it was automatically published based on the community settings
+            $isPublished = $this->isRecordPublished($existingZenodoRecId, $recordsApiUrl);
         }
 
         // @todo consider how to handle this alongside auto publishing in community
         // (e.g. record may be published already)
-        $autoPublish = $this->automaticPublishing($context);
-        if ($autoPublish) {
+        if ($this->automaticPublishing($context) && !$isPublished) {
             $published = $this->publishZenodoRecord($object, $zenodoRecId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
                 // @todo custom error message? e.g draft was created but publishing failed
                 // in this case there is still a draft - delete it then return the error
                 // @todo can't delete a record if there is an open review to a community
-                $this->deleteRecord($zenodoRecId, $recordsApiUrl, $apiKey);
+                $this->deleteRecord($object, $zenodoRecId, $recordsApiUrl, $apiKey);
                 return $published;
             }
         }
