@@ -109,10 +109,10 @@ msgid "plugins.importexport.zenodo.api.error.createReviewError"
 msgstr "Creating the review request was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.submitReviewError"
-msgstr "Submitting the review request was not successful! The Zenodo API returned an error: '{$param}'."
+msgstr "Submitting the review request to the community was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.acceptReviewError"
-msgstr "Accepting the review request was not successful! The Zenodo API returned an error: '{$param}'."
+msgstr "Accepting the review request to the community was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.reviewCheckError"
 msgstr "Checking for a review request was not successful! The Zenodo API returned an error: '{$param}'."
