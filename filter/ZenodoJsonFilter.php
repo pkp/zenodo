@@ -583,7 +583,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
             return $rorId ?? false;
         } catch (GuzzleException | Exception $e) {
-            error_log(__('plugins.importexport.ror.api.error.awardError', ['param' => $e->getMessage()]));
+            $returnMessage = $e->hasResponse()
+                ? $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')'
+                : $e->getMessage();
+            error_log(__('plugins.importexport.ror.api.error.awardError', ['param' => $returnMessage]));
             return false;
         }
     }
