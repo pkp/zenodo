@@ -174,7 +174,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         }
 
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
-        $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
+        $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION . '/';
 
         $isUpdate = false;
         $isPublished = false;
@@ -459,7 +459,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         // Settings depending on whether we are updating or creating a record
         $operation = $isUpdate ? 'PUT' : 'POST';
         if ($isUpdate) {
-            $url = $url . '/' . $zenodoId . '/draft';
+            $url = $url . $zenodoId . '/draft';
         }
 
         try {
@@ -493,7 +493,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         string $zenodoId
     ): bool|array {
         $httpClient = Application::get()->getHttpClient();
-        $url = $url . '/' . $zenodoId . '/draft';
+        $url = $url . $zenodoId . '/draft';
 
         $headers = [
             'Content-Type' => 'application/json',
@@ -531,7 +531,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         int $zenodoId
     ): bool|array {
         $httpClient = Application::get()->getHttpClient();
-        $filesMetadataUrl = $url . '/' . $zenodoId . '/draft/files';
+        $filesMetadataUrl = $url . $zenodoId . '/draft/files';
         $fileService = app()->get('file');
         $filesDir = Config::getVar('files', 'files_dir');
 
@@ -567,12 +567,14 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ],
                 );
             } catch (RequestException $e) {
+                $returnMessage = $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')';
+                $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
                 return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
 
             // Upload the file contents
             $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
-            $filesFileUrl = $url . '/' . $zenodoId . '/draft/files/' . $fileName . '/content';
+            $filesFileUrl = $url . $zenodoId . '/draft/files/' . $fileName . '/content';
             $fileHeaders = [
                 'Content-Type' => 'application/octet-stream',
                 'Authorization' => 'Bearer ' . $apiKey,
@@ -587,11 +589,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ],
                 );
             } catch (RequestException $e) {
+                $returnMessage = $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')';
+                $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
                 return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
 
             // Commit the file upload
-            $filesCommitUrl = $url . '/' . $zenodoId . '/draft/files/' . $fileName . '/commit';
+            $filesCommitUrl = $url . $zenodoId . '/draft/files/' . $fileName . '/commit';
             $commitHeaders = [
                 'Authorization' => 'Bearer ' . $apiKey,
             ];
@@ -605,6 +609,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ],
                 );
             } catch (RequestException $e) {
+                $returnMessage = $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')';
+                $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
                 return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
             }
         }
@@ -629,7 +635,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         //        }
 
         $httpClient = Application::get()->getHttpClient();
-        $deleteRecordUrl = $url . '/records/' . $zenodoId . '/draft';
+        $deleteRecordUrl = $url . self::ZENODO_API_OPERATION . '/' . $zenodoId . '/draft';
         $deleteRecordHeaders = [
             'Authorization' => 'Bearer ' . $apiKey,
         ];
@@ -711,7 +717,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         string $apiKey
     ): string|array {
         $httpClient = Application::get()->getHttpClient();
-        $publishUrl = $url . '/' . $zenodoId . '/draft/actions/publish';
+        $publishUrl = $url . $zenodoId . '/draft/actions/publish';
 
         $publishHeaders = [
             'Authorization' => 'Bearer ' . $apiKey,
@@ -739,7 +745,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function isRecordPublished(Submission|Publication $object, int $zenodoId, string $url): bool|array
     {
-        $recordUrl = $url . '/' . $zenodoId;
+        $recordUrl = $url . $zenodoId;
         $httpClient = Application::get()->getHttpClient();
 
         try {
@@ -769,7 +775,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function createReview(int $zenodoId, string $communityName, string $url, string $apiKey): bool|array
     {
-        $communityUrl = $url . '/' . $zenodoId . '/draft/review';
+        $communityUrl = $url . $zenodoId . '/draft/review';
         $httpClient = Application::get()->getHttpClient();
 
         $communityHeaders = [
@@ -799,8 +805,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     }
 
     /**
-     * Submit a review request to a community.
+     * Submit a review request to a Zenodo community.
      * Depending on the community's submission policy settings, the record may also be published.
+     * https://inveniordm.docs.cern.ch/reference/rest_api_reviews/#submit-a-record-for-review
      */
     public function submitReview(int $zenodoId, string $url, string $apiKey): array|string
     {
@@ -837,6 +844,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
     /**
      * Accept a review request to a community. This will also publish the record.
+     * https://inveniordm.docs.cern.ch/reference/rest_api_requests/#accept-a-request
      */
     public function acceptReview(string $requestId, string $url, string $apiKey): bool
     {
@@ -877,7 +885,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function getReviewRequest(int $zenodoId, string $url, string $apiKey): bool|string
     {
-        $reviewUrl = $url . 'records/' . $zenodoId . '/requests';
+        $reviewUrl = $url . self::ZENODO_API_OPERATION . '/' . $zenodoId . '/requests';
         $httpClient = Application::get()->getHttpClient();
 
         $acceptHeaders = [
@@ -904,11 +912,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
     /**
      * Cancel a review request to a community.
+     * https://inveniordm.docs.cern.ch/reference/rest_api_requests/#cancel-a-request
      * @todo not yet in use until we can determine how to get the request ID for a draft.
      */
     public function cancelReviewRequest(string $requestId, string $url, string $apiKey): bool|array
     {
-        $cancelUrl = $url . '/requests/' . $requestId . '/actions/cancel';
+        $cancelUrl = $url . 'requests/' . $requestId . '/actions/cancel';
         $httpClient = Application::get()->getHttpClient();
 
         $acceptHeaders = [
