@@ -174,7 +174,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         }
 
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
-        $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION . '/';
+        $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
         $isUpdate = false;
         $isPublished = false;
@@ -462,7 +462,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         // Settings depending on whether we are updating or creating a record
         $operation = $isUpdate ? 'PUT' : 'POST';
         if ($isUpdate) {
-            $url = $url . $zenodoId . '/draft';
+            $url = $url . '/' . $zenodoId . '/draft';
         }
 
         try {
@@ -496,7 +496,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         string $zenodoId
     ): bool|array {
         $httpClient = Application::get()->getHttpClient();
-        $url = $url . $zenodoId . '/draft';
+        $url = $url . '/' . $zenodoId . '/draft';
 
         $headers = [
             'Content-Type' => 'application/json',
@@ -534,7 +534,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         int $zenodoId
     ): bool|array {
         $httpClient = Application::get()->getHttpClient();
-        $filesMetadataUrl = $url . $zenodoId . '/draft/files';
+        $filesMetadataUrl = $url . '/' . $zenodoId . '/draft/files';
         $fileService = app()->get('file');
         $filesDir = Config::getVar('files', 'files_dir');
 
@@ -579,7 +579,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
             // Upload the file contents
             $filePath = $filesDir . '/' . $fileService->get($submissionFile->getData('fileId'))->path;
-            $filesFileUrl = $url . $zenodoId . '/draft/files/' . $fileName . '/content';
+            $filesFileUrl = $url . '/' . $zenodoId . '/draft/files/' . $fileName . '/content';
             $fileHeaders = [
                 'Content-Type' => 'application/octet-stream',
                 'Authorization' => 'Bearer ' . $apiKey,
@@ -602,7 +602,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             }
 
             // Commit the file upload
-            $filesCommitUrl = $url . $zenodoId . '/draft/files/' . $fileName . '/commit';
+            $filesCommitUrl = $url . '/' . $zenodoId . '/draft/files/' . $fileName . '/commit';
             $commitHeaders = [
                 'Authorization' => 'Bearer ' . $apiKey,
             ];
@@ -733,7 +733,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         string $apiKey
     ): string|array {
         $httpClient = Application::get()->getHttpClient();
-        $publishUrl = $url . $zenodoId . '/draft/actions/publish';
+        $publishUrl = $url . '/' . $zenodoId . '/draft/actions/publish';
 
         $publishHeaders = [
             'Authorization' => 'Bearer ' . $apiKey,
@@ -763,7 +763,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function isRecordPublished(Submission|Publication $object, int $zenodoId, string $url): bool|array
     {
-        $recordUrl = $url . $zenodoId;
+        $recordUrl = $url . '/' . $zenodoId;
         $httpClient = Application::get()->getHttpClient();
 
         try {
@@ -795,7 +795,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function createReview(int $zenodoId, string $communityName, string $url, string $apiKey): bool|array
     {
-        $communityUrl = $url . $zenodoId . '/draft/review';
+        $communityUrl = $url . '/' . $zenodoId . '/draft/review';
         $httpClient = Application::get()->getHttpClient();
 
         $communityHeaders = [
