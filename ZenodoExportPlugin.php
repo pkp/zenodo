@@ -201,6 +201,25 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return $zenodoId;
         }
 
+        // Set Zenodo ID, including for all other sibling minor publications.
+        $object->setData($this->getIdSettingName(), $zenodoId);
+        $this->updateObject($object);
+        if ($isPublication) {
+            // Set Zenodo ID for all other sibling minor publications.
+            $editParams = [
+                $this->getIdSettingName() => $zenodoId,
+            ];
+            Repo::publication()->getCollector()
+                ->filterBySubmissionIds([$object->getData('submissionId')])
+                ->filterByVersionStage($object->getData('versionStage'))
+                ->filterByVersionMajor($object->getData('versionMajor'))
+                ->getMany()
+                ->filter(function (Publication $publication) use ($object) {
+                    return $publication->getId() != $object->getId();
+                })
+                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
+        }
+
         // Note: can't update files on published records.
         if (!$isPublished) {
             $filesDeposit = $this->depositFiles($object, $recordsApiUrl, $apiKey, $zenodoId);
@@ -222,26 +241,11 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         // Deposit was received; set the status
         // If community submission fails, the record still exists, so we need to set the status and id.
         $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
-        $object->setData($this->getIdSettingName(), $zenodoId);
         $this->updateObject($object);
 
-        if ($isPublication) {
-            // Set Zenodo ID for all other sibling minor publications.
-            $editParams = [
-                $this->getIdSettingName() => $zenodoId,
-            ];
-            Repo::publication()->getCollector()
-                ->filterBySubmissionIds([$object->getData('submissionId')])
-                ->filterByVersionStage($object->getData('versionStage'))
-                ->filterByVersionMajor($object->getData('versionMajor'))
-                ->getMany()
-                ->filter(function (Publication $publication) use ($object) {
-                    return $publication->getId() != $object->getId();
-                })
-                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
-        }
-
         // Submit the record to a community (record may be published depending on settings)
+        // @todo manage errors - if this fails, cancel the review request?
+        // if we set error status, then this won't be called for the next update.
         $communityId = $this->getCommunityId($context);
         if ($communityId && !$isUpdate) {
             if ($review = $this->createReview($zenodoId, $communityId, $recordsApiUrl, $apiKey)) {
@@ -250,7 +254,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 if (is_array($requestId)) {
                     return $requestId;
                 } elseif ($autoPublishCommunity && $requestId) {
-                    // @todo handle errors - if this fails, delete the review request or direct user to Zenodo UI?
                     $reviewAccepted = $this->acceptReview($requestId, $zenodoApiUrl, $apiKey);
                 }
             } elseif (is_array($review)) {
@@ -662,7 +665,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.api.error.recordDeleteError', $e->getMessage()]];
         }
 
-        // delete Zenodo ID for all other sibling minor publications
+        // Delete Zenodo ID, including for all other sibling minor publications.
+        $object->setData($this->getIdSettingName(), null);
+        $this->updateObject($object);
         if ($object instanceof Publication) {
             $editParams = [
                 $this->getIdSettingName() => null,
