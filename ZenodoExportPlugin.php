@@ -193,10 +193,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             $result = $this->deleteDraft($object, $existingZenodoId, $zenodoApiUrl, $apiKey);
             if (is_array($result)) {
                 return $result;
+            } else {
+                // Re-check the existing Zenodo ID as it was deleted.
+                $existingZenodoId = $object->getData($this->getIdSettingName());
             }
         }
 
-        $zenodoId = $this->createOrUpdateDraft($jsonString, $object, $recordsApiUrl, $apiKey, $isUpdate, $isPublished, $existingZenodoId);
+        $zenodoId = $this->createOrUpdateDraft($jsonString, $object, $recordsApiUrl, $apiKey, $isPublished, $existingZenodoId);
         if (is_array($zenodoId)) {
             return $zenodoId;
         }
@@ -440,7 +443,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         Submission|Publication $object,
         string $url,
         string $apiKey,
-        bool $isUpdate = false,
         bool $isPublished = false,
         ?string $zenodoId = null
     ): string|array {
@@ -459,9 +461,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             }
         }
 
-        // Settings depending on whether we are updating or creating a record
-        $operation = $isUpdate ? 'PUT' : 'POST';
-        if ($isUpdate) {
+        // Settings depending on whether we are updating a published record or creating a record
+        $operation = $isPublished ? 'PUT' : 'POST';
+        if ($isPublished && $zenodoId) {
             $url = $url . '/' . $zenodoId . '/draft';
         }
 
