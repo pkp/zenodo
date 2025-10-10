@@ -81,7 +81,8 @@ msgid "plugins.importexport.zenodo.register.error.mdsError"
 msgstr "Deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.register.error.communityError"
-msgstr "Unable to retrieve the community ID from Zenodo. Please check the community is set correctly and try again."
+msgstr "Unable to retrieve the community ID from Zenodo. Please check the community is set correctly and try again. "
+"If you are using the sandbox, please enable test mode first."
 
 msgid "plugins.importexport.zenodo.api.error.communityIdError"
 msgstr "Retrieving the community ID was not successful! The Zenodo API returned an error: '{$param}'."
