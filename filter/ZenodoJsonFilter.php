@@ -285,7 +285,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Version relations
         if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
-            $previousPublications = Repo::publication()->getCollector() /** @var $lastPublication Publication */
+            $previousPublications = Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$publication->getData('submissionId')])
                 ->filterByVersionStage($publication->getData('versionStage'))
                 ->filterByStatus([PKPSubmission::STATUS_PUBLISHED])
@@ -293,10 +293,11 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
             if (!$previousPublications->isEmpty()) {
                 $previousDois = [];
-                foreach ($previousPublications as $previousPublication) {
+                foreach ($previousPublications as $previousPublication) { /** @var $previousPublication Publication */
                     if (
-                        (int)$previousPublication->getData('versionMajor')
-                        < (int)$publication->getData('versionMajor')
+                        ((int)$previousPublication->getData('versionMajor')
+                        < (int)$publication->getData('versionMajor'))
+                        && $previousPublication->getDoi()
                     ) {
                         $previousDois[] = $previousPublication->getDoi();
                     }
