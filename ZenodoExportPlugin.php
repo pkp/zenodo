@@ -663,6 +663,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ],
             );
         } catch (RequestException $e) {
+            if ($e->getCode() === self::ZENODO_API_NOT_FOUND && !$isPublished) {
+                // The user deleted the record in Zenodo - remove the existing Zenodo ID.
+                $this->removeZenodoId($object);
+                $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_NOT_DEPOSITED);
+                return true;
+            }
             $returnMessage = $e->hasResponse()
                 ? $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')'
                 : $e->getMessage();
@@ -671,25 +677,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.api.error.recordDeleteError', $e->getMessage()]];
         }
 
-        // Delete Zenodo ID, including for all other sibling minor publications,
-        // if the record was not previously published.
+        // Clear Zenodo ID if the record was not previously published.
         if (!$isPublished) {
-            $object->setData($this->getIdSettingName(), null);
-            $this->updateObject($object);
-            if ($object instanceof Publication) {
-                $editParams = [
-                    $this->getIdSettingName() => null,
-                ];
-                Repo::publication()->getCollector()
-                    ->filterBySubmissionIds([$object->getData('submissionId')])
-                    ->filterByVersionStage($object->getData('versionStage'))
-                    ->filterByVersionMajor($object->getData('versionMajor'))
-                    ->getMany()
-                    ->filter(function (Publication $publication) use ($object) {
-                        return $publication->getId() != $object->getId();
-                    })
-                    ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
-            }
+            $this->removeZenodoId($object);
         }
         return true;
     }
@@ -992,5 +982,28 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.api.error.reviewCancelError', $returnMessage]];
         }
         return true;
+    }
+
+    /**
+     * Remove an object's Zenodo ID.
+     */
+    public function removeZenodoId(Submission|Publication $object): void
+    {
+        $object->setData($this->getIdSettingName(), null);
+        $this->updateObject($object);
+        if ($object instanceof Publication) {
+            $editParams = [
+                $this->getIdSettingName() => null,
+            ];
+            Repo::publication()->getCollector()
+                ->filterBySubmissionIds([$object->getData('submissionId')])
+                ->filterByVersionStage($object->getData('versionStage'))
+                ->filterByVersionMajor($object->getData('versionMajor'))
+                ->getMany()
+                ->filter(function (Publication $publication) use ($object) {
+                    return $publication->getId() != $object->getId();
+                })
+                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
+        }
     }
 }
