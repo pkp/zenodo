@@ -192,7 +192,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             if (is_array($result)) {
                 return $result;
             }
-            // Re-check the existing Zenodo ID as it was deleted.
+            // Re-check the existing Zenodo ID as it may have been deleted.
             $existingZenodoId = $object->getData($this->getIdSettingName());
         }
 
@@ -233,17 +233,18 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             $published = $this->publishZenodoDraft($object, $zenodoId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
                 // Try to delete the draft if publishing failed.
-                $this->deleteDraft($object, $zenodoId, $zenodoApiUrl, $apiKey);
+                $this->deleteDraft($object, $zenodoId, $zenodoApiUrl, $apiKey, $isPublished);
                 return $published;
             }
         }
 
-        // Deposit was received; set the status
+        // Deposit was received; set the status.
         // If community submission fails, the record still exists, so we need to set the status for now.
         $object->setData($this->getDepositStatusSettingName(), PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED);
         $this->updateObject($object);
 
-        // Submit the record to a community (record may be published depending on settings)
+        // Submit the record to a community (record may be published depending on settings).
+        // @todo following up with Zenodo team about submitting published records to a community.
         $communityId = $this->getCommunityId($context);
         if ($communityId && !$isPublished) {
             if ($review = $this->createReview($object, $zenodoId, $communityId, $recordsApiUrl, $apiKey)) {
@@ -261,7 +262,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 return $review;
             }
         }
-
         return true;
     }
 
@@ -638,7 +638,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         Submission|Publication $object,
         int $zenodoId,
         string $url,
-        string $apiKey
+        string $apiKey,
+        bool $isPublished = false
     ): bool|array {
         // @todo unable to get requests for a draft, following up with zenodo team
         // for now, the user will have to cancel it in the Zenodo UI.
@@ -670,22 +671,25 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.api.error.recordDeleteError', $e->getMessage()]];
         }
 
-        // Delete Zenodo ID, including for all other sibling minor publications.
-        $object->setData($this->getIdSettingName(), null);
-        $this->updateObject($object);
-        if ($object instanceof Publication) {
-            $editParams = [
-                $this->getIdSettingName() => null,
-            ];
-            Repo::publication()->getCollector()
-                ->filterBySubmissionIds([$object->getData('submissionId')])
-                ->filterByVersionStage($object->getData('versionStage'))
-                ->filterByVersionMajor($object->getData('versionMajor'))
-                ->getMany()
-                ->filter(function (Publication $publication) use ($object) {
-                    return $publication->getId() != $object->getId();
-                })
-                ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
+        // Delete Zenodo ID, including for all other sibling minor publications,
+        // if the record was not previously published.
+        if (!$isPublished) {
+            $object->setData($this->getIdSettingName(), null);
+            $this->updateObject($object);
+            if ($object instanceof Publication) {
+                $editParams = [
+                    $this->getIdSettingName() => null,
+                ];
+                Repo::publication()->getCollector()
+                    ->filterBySubmissionIds([$object->getData('submissionId')])
+                    ->filterByVersionStage($object->getData('versionStage'))
+                    ->filterByVersionMajor($object->getData('versionMajor'))
+                    ->getMany()
+                    ->filter(function (Publication $publication) use ($object) {
+                        return $publication->getId() != $object->getId();
+                    })
+                    ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
+            }
         }
         return true;
     }
