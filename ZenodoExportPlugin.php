@@ -188,7 +188,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         }
 
         if ($isUpdate && !$isPublished) {
-            $result = $this->deleteDraft($object, $existingZenodoId, $zenodoApiUrl, $apiKey);
+            $result = $this->deleteDraft($object, $existingZenodoId, $zenodoApiUrl, $apiKey, $isPublished);
             if (is_array($result)) {
                 return $result;
             }
@@ -232,8 +232,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         if ($this->automaticPublishing($context) || $isPublished) {
             $published = $this->publishZenodoDraft($object, $zenodoId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
-                // Try to delete the draft if publishing failed.
-                $this->deleteDraft($object, $zenodoId, $zenodoApiUrl, $apiKey, $isPublished);
                 return $published;
             }
         }
@@ -639,7 +637,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         int $zenodoId,
         string $url,
         string $apiKey,
-        bool $isPublished = false
+        bool $isPublished
     ): bool|array {
         // @todo unable to get requests for a draft, following up with zenodo team
         // for now, the user will have to cancel it in the Zenodo UI.
