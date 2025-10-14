@@ -91,6 +91,7 @@ class ZenodoInfoSender extends ScheduledTask
      * their articles automatically sent to Zenodo.
      *
      * @return array<Journal>
+     * @throws Exception
      */
     protected function getJournals(): array
     {

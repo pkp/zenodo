@@ -14,6 +14,6 @@
 	<application>zenodo</application>
 	<type>plugins.generic</type>
 	<release>1.0.0.0</release>
-	<date>2025-10-03</date>
+	<date>2025-10-14</date>
     <class>ZenodoPlugin</class>
 </version>

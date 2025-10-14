@@ -1,7 +1,5 @@
 # Zenodo Plugin for OJS
 
-_This plugin is in development and should not be used in a production environment._
-
 An OJS plugin for exporting articles to [Zenodo](https://zenodo.org/).
 
 ## Compatibility
@@ -30,9 +28,14 @@ This plugin uses the Invenio RDM API and does not use Zenodo's legacy API. Refer
 
 ### DOIs
 
-By default, the plugin expects that exported records have a DOI, and will not be exported if a DOI
-is not available. Zenodo is able to mint their own DOIs, and this can be enabled in the plugin settings.
-The DOI minted in Zenodo does not get saved in OJS.
+By default, the plugin expects that exported records have a DOI, and records will not be exported if a DOI
+is not set. Zenodo is able to mint their own DOIs, and this option can be enabled in the plugin settings.
+The DOI minted in Zenodo is not saved in OJS.
+
+### DOI Versioning
+
+If DOI versioning is enabled in OJS, then the user can deposit each major version of an article to Zenodo as an
+individual record. The previous version will be included in the relations metadata.
 
 ### Automatic Publishing
 
