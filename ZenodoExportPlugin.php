@@ -318,7 +318,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     }
                 }
             }
-            // redirect back to the right tab
+            // Redirect back to the right tab
             $request->redirect(null, null, null, $path, null, $tab);
         } elseif ($request->getUserVar(PubObjectsExportPlugin::EXPORT_ACTION_EXPORT)) {
             $items = [];
@@ -794,8 +794,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * Create a review request for a Zenodo record.
      * https://inveniordm.docs.cern.ch/reference/rest_api_reviews/#createupdate-a-review-request
      */
-    public function createReview(Submission|Publication $object, int $zenodoId, string $communityName, string $url, string $apiKey): bool|array
-    {
+    public function createReview(
+        Submission|Publication $object,
+        int $zenodoId,
+        string $communityName,
+        string $url,
+        string $apiKey
+    ): bool|array {
         $communityUrl = $url . '/' . $zenodoId . '/draft/review';
         $httpClient = Application::get()->getHttpClient();
 
@@ -881,8 +886,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * Accept a review request to a community. This will also publish the record.
      * https://inveniordm.docs.cern.ch/reference/rest_api_requests/#accept-a-request
      */
-    public function acceptReview(Submission|Publication $object, string $requestId, string $url, string $apiKey): bool|array
-    {
+    public function acceptReview(
+        Submission|Publication $object,
+        string $requestId,
+        string $url,
+        string $apiKey
+    ): bool|array {
         $acceptUrl = $url . 'requests/' . $requestId . '/actions/accept';
         $httpClient = Application::get()->getHttpClient();
 
