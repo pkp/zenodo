@@ -233,6 +233,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             $published = $this->publishZenodoDraft($object, $zenodoId, $recordsApiUrl, $apiKey);
             if (is_array($published)) {
                 return $published;
+            } else {
+                $isPublished = true;
             }
         }
 
