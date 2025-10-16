@@ -338,7 +338,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Publication version
         $versionMajor = (string)$publication->getData('versionMajor');
         $versionMinor = (string)$publication->getData('versionMinor');
-        if (!empty($versionMajor) && !empty($versionMinor)) {
+        if ($versionMajor != '' && $versionMinor != '') {
             $article['metadata']['version'] = $versionMajor . '.' . $versionMinor;
         }
 
