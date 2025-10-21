@@ -244,24 +244,33 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         $this->updateObject($object);
 
         // Submit the record to a community (record may be published depending on settings).
-        // @todo following up with Zenodo team about submitting published records to a community.
         $communityId = $this->getCommunityId($context);
-        if ($communityId && !$isPublished) {
-            if ($review = $this->createReview($object, $zenodoId, $communityId, $recordsApiUrl, $apiKey)) {
-                $requestId = $this->submitReview($object, $zenodoId, $zenodoApiUrl, $apiKey);
-                $autoPublishCommunity = $this->automaticPublishingCommunity($context);
+        if ($communityId) {
+            $requestId = null;
+            if ($isPublished) {
+                $requestId = $this->submitReviewPublished($object, $zenodoId, $recordsApiUrl, $apiKey, $communityId);
                 if (is_array($requestId)) {
                     return $requestId;
-                } elseif ($autoPublishCommunity && $requestId) {
-                    $reviewAccepted = $this->acceptReview($object, $requestId, $zenodoApiUrl, $apiKey);
-                    if (is_array($reviewAccepted)) {
-                        return $reviewAccepted;
-                    }
                 }
-            } elseif (is_array($review)) {
-                return $review;
+            } else {
+                if ($review = $this->createReview($object, $zenodoId, $communityId, $recordsApiUrl, $apiKey)) {
+                    $requestId = $this->submitReview($object, $zenodoId, $zenodoApiUrl, $apiKey);
+                    if (is_array($requestId)) {
+                        return $requestId;
+                    }
+                } elseif (is_array($review)) {
+                    return $review;
+                }
+            }
+            $autoPublishCommunity = $this->automaticPublishingCommunity($context);
+            if ($autoPublishCommunity && $requestId) {
+                $reviewAccepted = $this->acceptReview($object, $requestId, $zenodoApiUrl, $apiKey);
+                if (is_array($reviewAccepted)) {
+                    return $reviewAccepted;
+                }
             }
         }
+
         return true;
     }
 
@@ -797,7 +806,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public function createReview(
         Submission|Publication $object,
         int $zenodoId,
-        string $communityName,
+        string $communityId,
         string $url,
         string $apiKey
     ): bool|array {
@@ -817,7 +826,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     'headers' => $communityHeaders,
                     'json' => [
                         'receiver' => [
-                            'community' => $communityName,
+                            'community' => $communityId,
                         ],
                         'type' => 'community-submission'
                     ]
@@ -877,6 +886,53 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             $errorMessage = __('plugins.importexport.zenodo.api.error.submitReviewError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
             return [['plugins.importexport.zenodo.api.error.submitReviewError', $returnMessage]];
+        }
+
+        return $requestId;
+    }
+
+    /**
+     * Submit a published record to a community.
+     */
+    public function submitReviewPublished(
+        Submission|Publication $object,
+        int $zenodoId,
+        string $url,
+        string $apiKey,
+        string $communityId
+    ): array|string {
+        $submitUrl = $url . '/' . $zenodoId . '/communities';
+        $httpClient = Application::get()->getHttpClient();
+
+        $submitHeaders = [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ];
+
+        try {
+            $submitCommunityResponse = $httpClient->request(
+                'POST',
+                $submitUrl,
+                [
+                    'headers' => $submitHeaders,
+                    'json' => [
+                        'communities' => [
+                            [
+                                'id' => $communityId
+                            ],
+                        ],
+                    ],
+                ]
+            );
+            $body = json_decode($submitCommunityResponse->getBody(), true);
+            $requestId = $body['processed'][0]['request_id'];
+        } catch (RequestException $e) {
+            $returnMessage = $e->hasResponse()
+                ? $e->getResponse()->getBody() . ' (' . $e->getResponse()->getStatusCode() . ' ' . $e->getResponse()->getReasonPhrase() . ')'
+                : $e->getMessage();
+            $errorMessage = __('plugins.importexport.zenodo.api.error.submitPublishedCommunityError', ['param' => $returnMessage]);
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
+            return [['plugins.importexport.zenodo.api.error.submitPublishedCommunityError', $errorMessage]];
         }
 
         return $requestId;

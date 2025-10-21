@@ -117,6 +117,9 @@ msgstr "Accepting the review request to the community was not successful! The Ze
 msgid "plugins.importexport.zenodo.api.error.reviewCheckError"
 msgstr "Checking for a review request was not successful! The Zenodo API returned an error: '{$param}'."
 
+msgid "plugins.importexport.zenodo.api.error.submitPublishedCommunityError"
+msgstr "Submitting the published record to the community was not successful! The Zenodo API returned an error: '{$param}'."
+
 msgid "plugins.importexport.zenodo.api.error.noDoi"
 msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
 
