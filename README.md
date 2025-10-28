@@ -24,6 +24,11 @@ Compatible with OJS 3.6 and later.
 This plugin uses the Invenio RDM API and does not use Zenodo's legacy API. Refer to
 [the Invenio RDM documentation](https://inveniordm.docs.cern.ch/reference/rest_api_index/) for more details.
 
+## Deposit Workflow
+
+A workflow diagram is available in the `docs` directory which outlines the steps in the plugin's workflow from selection
+of a record to deposit in Zenodo.
+
 ## Using the Plugin
 
 ### DOIs
