@@ -50,7 +50,7 @@
 				{fbvElement type="checkbox" id="automaticPublishingCommunity" label="plugins.importexport.zenodo.settings.form.automaticPublishingCommunity.description" checked=$automaticPublishingCommunity|compare:true}
 			{/fbvFormSection}
 		{/fbvFormArea}
-		{fbvFormButtons submitText="common.save"}
+		{fbvFormButtons submitText="common.save" hideCancel="true"}
 		<p>
 			<span class="formRequired">{translate key="common.requiredField"}</span>
 		</p>
