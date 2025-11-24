@@ -175,14 +175,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             foreach ($citations as $citation) { /** @var Citation $citation */
                 $referenceData = [];
                 $referenceData['reference'] = $citation->getRawCitation();
-
-                // https://inveniordm.docs.cern.ch/reference/metadata/#identifier-schemes
-                // @todo add arxiv to list once format is fixed (should not be a url e.g. arXiv:2401.12345)
-                // @todo validate formats?
-                // https://github.com/inveniosoftware/idutils/blob/master/idutils/validators.py
-                // https://github.com/inveniosoftware/idutils/blob/master/idutils/utils.py
                 $supportedIdentifiers = [
-                    'doi', 'handle', 'url', 'urn'
+                    'arxiv','doi', 'handle', 'url', 'urn'
                 ];
 
                 foreach ($supportedIdentifiers as $identifier) {
