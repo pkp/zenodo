@@ -29,6 +29,7 @@ use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
 use PKP\affiliation\Affiliation;
+use PKP\author\contributorRole\ContributorType;
 use PKP\citation\Citation;
 use PKP\context\Context;
 use PKP\core\PKPString;
@@ -442,7 +443,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /**
-     * Helper function for authors metadata
+     * Helper function for authors metadata.
      */
     private function getAuthorsData(Publication $publication, string $publicationLocale): array
     {
@@ -451,48 +452,59 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         foreach ($articleAuthors as $articleAuthor) { /** @var Author $articleAuthor */
             $author = [];
+            $contributorType = $articleAuthor->getData('contributorType');
 
-            // Family name is required by Zenodo
-            if (empty($articleAuthor->getFamilyName($publicationLocale))) {
-                $author['family_name'] = $articleAuthor->getGivenName($publicationLocale);
-            } else {
-                if ($articleAuthor->getGivenName($publicationLocale)) {
-                    $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
-                }
-                if ($articleAuthor->getFamilyName($publicationLocale)) {
-                    $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
-                }
-            }
-
-            $author['type'] = 'personal';
-
-            if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
-                $author['identifiers'] = [
-                    'identifier' => $articleAuthor->getOrcid(),
-                    'scheme' => 'orcid',
-                ];
-            }
-
-            $affiliations = $articleAuthor->getAffiliations();
-            if (count($affiliations) > 0) {
-                $affiliationsData = [];
-                foreach ($affiliations as $affiliation) { /** @var Affiliation $affiliation */
-                    if ($affiliation->getRor()) {
-                        $affiliationsData[] = [
-                            'id' => str_replace('https://ror.org/', '', $affiliation->getRor()),
-                            'name' => $affiliation->getAffiliationName($publicationLocale),
-                        ];
-                    } elseif ($affiliation->getAffiliationName($publicationLocale)) {
-                        $affiliationsData[] = [
-                            'name' => $affiliation->getAffiliationName($publicationLocale),
-                        ];
+            if ($contributorType === ContributorType::PERSON->getName()) {
+                // Family name is required by Zenodo
+                if (empty($articleAuthor->getFamilyName($publicationLocale))) {
+                    $author['family_name'] = $articleAuthor->getGivenName($publicationLocale);
+                } else {
+                    if ($articleAuthor->getGivenName($publicationLocale)) {
+                        $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
+                    }
+                    if ($articleAuthor->getFamilyName($publicationLocale)) {
+                        $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
                     }
                 }
-                $authorsData[] = [
-                    'person_or_org' => $author,
-                    'affiliations' => $affiliationsData
-                ];
-            } else {
+                $author['type'] = 'personal';
+                if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
+                    $author['identifiers'] = [
+                        'identifier' => $articleAuthor->getOrcid(),
+                        'scheme' => 'orcid',
+                    ];
+                }
+                $affiliations = $articleAuthor->getAffiliations();
+                if (count($affiliations) > 0) {
+                    $affiliationsData = [];
+                    foreach ($affiliations as $affiliation) { /** @var Affiliation $affiliation */
+                        if ($affiliation->getRor()) {
+                            $affiliationsData[] = [
+                                'id' => str_replace('https://ror.org/', '', $affiliation->getRor()),
+                                'name' => $affiliation->getAffiliationName($publicationLocale),
+                            ];
+                        } elseif ($affiliation->getAffiliationName($publicationLocale)) {
+                            $affiliationsData[] = [
+                                'name' => $affiliation->getAffiliationName($publicationLocale),
+                            ];
+                        }
+                    }
+                    $authorsData[] = [
+                        'person_or_org' => $author,
+                        'affiliations' => $affiliationsData
+                    ];
+                } else {
+                    $authorsData[] = ['person_or_org' => $author];
+                }
+            } elseif ($contributorType === ContributorType::ORGANIZATION->getName()) {
+                // @todo add ROR as well? or just part of affiliations same as for person?
+                if ($articleAuthor->getOrganizationName($publicationLocale)) {
+                    $author['name'] = $articleAuthor->getOrganizationName($publicationLocale);
+                    $author['type'] = 'organizational';
+                    $authorsData[] = ['person_or_org' => $author];
+                }
+            } elseif ($contributorType === ContributorType::ANONYMOUS->getName()) {
+                $author['family_name'] = 'Anonymous';
+                $author['type'] = 'personal';
                 $authorsData[] = ['person_or_org' => $author];
             }
         }
@@ -500,7 +512,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /**
-     * Helper function for funding metadata
+     * Helper function for funding metadata.
      */
     private function getFundingData(Publication $publication, Context $context): false|array
     {
