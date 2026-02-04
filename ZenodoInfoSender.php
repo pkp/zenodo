@@ -68,8 +68,6 @@ class ZenodoInfoSender extends ScheduledTask
         $journals = $this->getJournals();
 
         foreach ($journals as $journal) {
-            // load pubIds for this journal
-            PluginRegistry::loadCategory('pubIds', true, $journal->getId());
             if ($journal->getData(Context::SETTING_DOI_VERSIONING)) {
                 $depositablePublications = $plugin->getAllDepositablePublications($journal);
                 if (count($depositablePublications)) {
