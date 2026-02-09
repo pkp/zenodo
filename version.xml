@@ -15,5 +15,6 @@
 	<type>plugins.generic</type>
 	<release>1.0.0.0</release>
 	<date>2025-10-14</date>
+    <lazy-load>1</lazy-load>
     <class>ZenodoPlugin</class>
 </version>
