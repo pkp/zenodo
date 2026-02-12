@@ -101,6 +101,7 @@ class ZenodoInfoSender extends ScheduledTask
         while ($journal = $journalFactory->next()) { /** @var  Journal $journal */
             $journalId = $journal->getId();
             if (
+                !$plugin->getSetting($journalId, 'enabled') ||
                 !$plugin->getSetting($journalId, 'apiKey') ||
                 !$plugin->getSetting($journalId, 'automaticRegistration')
             ) {
