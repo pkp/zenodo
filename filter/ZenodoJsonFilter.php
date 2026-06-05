@@ -429,7 +429,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             }
         }
 
-        // Pages
+        // Pages or Article Number
         $startPage = $publication->getStartingPage();
         $endPage = $publication->getEndingPage();
         if (isset($startPage) && $startPage !== '') {
@@ -437,6 +437,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             if (isset($endPage) && $endPage !== '') {
                 $journalData['pages'] = $startPage . '-' . $endPage;
             }
+        } elseif ($publication->getData('articleNumber')) {
+            $journalData['pages'] = $publication->getData('articleNumber');
         }
 
         return $journalData;
