@@ -585,6 +585,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 $languageList[] = LocaleConversion::getIso3FromLocale($galley->getLocale());
             }
         }
-        return array_unique($languageList);
+        return array_values(array_unique(array_filter($languageList)));
     }
 }

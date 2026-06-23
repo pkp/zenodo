@@ -180,7 +180,7 @@ class ZenodoSettingsForm extends PubObjectsExportSettingsForm
             $body = json_decode($response->getBody(), true);
 
             if ($response->getStatusCode() === ZenodoExportPlugin::ZENODO_API_OK) {
-                if ($body['id']) {
+                if ($body['id'] ?? null) {
                     $plugin->updateSetting($contextId, 'communityId', $body['id'], 'string');
                     return true;
                 } else {

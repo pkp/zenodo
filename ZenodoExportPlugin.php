@@ -325,7 +325,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             } else {
                 foreach ($resultErrors as $errors) {
                     foreach ($errors as $error) {
-                        if (!is_array($error) || !count($error) > 0) {
+                        if (!is_array($error) || count($error) < 1) {
                             throw new Exception('Invalid error message');
                         }
                         $this->_sendNotification(
@@ -391,14 +391,6 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public function getApiKey(Context $context): string|false
     {
         return $this->getSetting($context->getId(), 'apiKey') ?? false;
-    }
-
-    /**
-     * Get the Zenodo community slug that records should be submitted to.
-     */
-    public function getCommunity(Context $context): string|false
-    {
-        return $this->getSetting($context->getId(), 'community') ?? false;
     }
 
     /**
@@ -503,7 +495,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         }
 
         $responseBody = json_decode($response->getBody());
-        return $responseBody->id;
+        return (string) $responseBody->id;
     }
 
     /**
@@ -552,7 +544,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         Submission|Publication $object,
         string $url,
         string $apiKey,
-        int $zenodoId
+        string $zenodoId
     ): bool|array {
         $httpClient = Application::get()->getHttpClient();
         $filesMetadataUrl = $url . '/' . $zenodoId . '/draft/files';
@@ -655,7 +647,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     protected function deleteDraft(
         Submission|Publication $object,
-        int $zenodoId,
+        string $zenodoId,
         string $url,
         string $apiKey,
         bool $isPublished
@@ -746,7 +738,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function publishZenodoDraft(
         Submission|Publication $object,
-        int $zenodoId,
+        string $zenodoId,
         string $url,
         string $apiKey
     ): string|array {
@@ -780,7 +772,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     /**
      * Check if a Zenodo record has been published.
      */
-    public function isRecordPublished(Submission|Publication $object, int $zenodoId, string $url): bool|array
+    public function isRecordPublished(Submission|Publication $object, string $zenodoId, string $url): bool|array
     {
         $recordUrl = $url . '/' . $zenodoId;
         $httpClient = Application::get()->getHttpClient();
@@ -815,7 +807,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function createReview(
         Submission|Publication $object,
-        int $zenodoId,
+        string $zenodoId,
         string $communityId,
         string $url,
         string $apiKey
@@ -861,7 +853,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function submitReview(
         Submission|Publication $object,
-        int $zenodoId,
+        string $zenodoId,
         string $url,
         string $apiKey
     ): array|string {
@@ -906,7 +898,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      */
     public function submitReviewPublished(
         Submission|Publication $object,
-        int $zenodoId,
+        string $zenodoId,
         string $url,
         string $apiKey,
         string $communityId
@@ -997,7 +989,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * request ID if there is one.
      * @todo not yet in use until we determine how to get the request ID for a draft record.
      */
-    public function getReviewRequest(int $zenodoId, string $url, string $apiKey): bool|string
+    public function getReviewRequest(string $zenodoId, string $url, string $apiKey): bool|string
     {
         $reviewUrl = $url . self::ZENODO_API_OPERATION . '/' . $zenodoId . '/requests';
         $httpClient = Application::get()->getHttpClient();

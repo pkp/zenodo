@@ -140,9 +140,9 @@ class ZenodoInfoSender extends ScheduledTask
     protected function addLogEntry(array $errors): void
     {
         foreach ($errors as $error) {
-            if (!is_array($error) || !count($error) > 0) {
+            if (!is_array($error) || count($error) < 1) {
                 throw new Exception('Invalid error message');
-            };
+            }
             $this->addExecutionLogEntry(
                 __($error[0], ['param' => $error[1] ?? null]),
                 ScheduledTaskHelper::SCHEDULED_TASK_MESSAGE_TYPE_WARNING
