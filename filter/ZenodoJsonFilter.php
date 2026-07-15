@@ -470,8 +470,8 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 }
                 $author['type'] = 'personal';
                 if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
-                    $author['identifiers'] = [
-                        'identifier' => $articleAuthor->getOrcid(),
+                    $author['identifiers'][] = [
+                        'identifier' => basename(parse_url($articleAuthor->getOrcid(), PHP_URL_PATH)),
                         'scheme' => 'orcid',
                     ];
                 }
