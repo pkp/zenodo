@@ -551,8 +551,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                         if (!empty($grant['grantDoi'])) {
                             $award['identifiers'] = [['scheme' => 'doi', 'identifier' => $grant['grantDoi']]];
                         }
-                        if (!empty($grant['grantNumber']) && !empty($grant['grantName'])) {
+                        if (!empty($grant['grantNumber'])) {
                             $award['number'] = $grant['grantNumber'];
+                        }
+                        if (!empty($grant['grantName'])) {
                             $award['title'] = [LocaleConversion::getIso1FromLocale($locale) => $grant['grantName']];
                         }
                     }
