@@ -76,7 +76,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $publication = $pubObject->getCurrentPublication();
             $submissionId = $pubObject->getId();
         } elseif ($pubObject instanceof Publication) {
-            $publication = $pubObject; /** @var Publication $publication */
+            $publication = $pubObject;
             $submissionId = $pubObject->getData('submissionId');
         } else {
             throw new Exception('Invalid object type');
@@ -90,8 +90,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             if ($cache->isCached('issues', $issueId)) {
                 $issue = $cache->get('issues', $issueId); /** @var Issue $issue */
             } else {
-                $issue = Repo::issue()->get($issueId);
-                $issue = $issue->getJournalId() == $context->getId() ? $issue : null;
+                $issue = Repo::issue()->get($issueId, $context->getId());
                 if ($issue) {
                     $cache->add($issue, null);
                 }
@@ -170,12 +169,12 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $citations = $publication->getData('citations') ?? [];
         if (!empty($citations)) {
             $citedIdentifiers = [];
+            $supportedIdentifiers = [
+                'arxiv','doi', 'handle', 'url', 'urn'
+            ];
             foreach ($citations as $citation) { /** @var Citation $citation */
                 $referenceData = [];
                 $referenceData['reference'] = $citation->getRawCitation();
-                $supportedIdentifiers = [
-                    'arxiv','doi', 'handle', 'url', 'urn'
-                ];
 
                 foreach ($supportedIdentifiers as $identifier) {
                     if ($citation->getData($identifier)) {
@@ -211,27 +210,20 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // FullText URL relation
         $request = Application::get()->getRequest();
-        if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
-            $url = $request->getDispatcher()->url(
-                $request,
-                Application::ROUTE_PAGE,
-                $context->getPath(),
-                'article',
-                'view',
-                [$publication->getData('urlPath') ?? $submissionId, 'version', $publication->getId()],
-                urlLocaleForPage: ''
-            );
-        } else {
-            $url = $request->getDispatcher()->url(
-                $request,
-                Application::ROUTE_PAGE,
-                $context->getPath(),
-                'article',
-                'view',
-                [$publication->getData('urlPath') ?? $submissionId],
-                urlLocaleForPage: ''
-            );
-        }
+        $doiVersioning = $context->getData(Context::SETTING_DOI_VERSIONING);
+        $path = $doiVersioning ?
+                ([$publication->getData('urlPath') ?? $submissionId, 'version', $publication->getId()]) :
+                ([$publication->getData('urlPath') ?? $submissionId]);
+
+        $url = $request->getDispatcher()->url(
+            $request,
+            Application::ROUTE_PAGE,
+            $context->getPath(),
+            'article',
+            'view',
+            $path,
+            urlLocaleForPage: ''
+        );
 
         $article['metadata']['related_identifiers'][] = [
             'identifier' => $url,
@@ -266,17 +258,29 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Review relations
-        // @todo once https://github.com/pkp/pkp-lib/issues/11332 is implemented, add relations for review DOIs
-        // $article['metadata']['related_identifiers'][] = [
-        //     'identifier' => $reviewDoi,
-        //     'relation_type' => [
-        //         'id' => 'isreviewedby'
-        //     ],
-        //     'scheme' => 'doi',
-        // ];
+        $reviewItems = Repo::publication()->getReviewDoiItemsGroupedByPublication([$publication->getId()]);
+        foreach ($reviewItems[$publication->getId()] ?? [] as $reviewItem) {
+            if ($reviewItem['pubObjectType'] !== Repo::doi()::TYPE_PEER_REVIEW) {
+                continue;
+            }
+            $reviewDoi = $reviewItem['doiObject']?->getData('doi');
+            if ($reviewDoi) {
+                $article['metadata']['related_identifiers'][] = [
+                    'identifier' => $reviewDoi,
+                    'relation_type' => [
+                        'id' => 'isreviewedby'
+                    ],
+                    'scheme' => 'doi',
+                    'resource_type' => [
+                        'id' => 'publication-peerreview',
+                        'title' => ['en' => 'Peer review']
+                    ]
+                ];
+            }
+        }
 
         // Version relations
-        if ($context->getData(Context::SETTING_DOI_VERSIONING)) {
+        if ($doiVersioning) {
             $previousPublications = Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$publication->getData('submissionId')])
                 ->filterByVersionStage($publication->getData('versionStage'))
@@ -531,7 +535,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         //    "funder": {"id": "00k4n6c32"}
         //   },
 
-        $funders = $publication->getData('funders');
+        $funders = $publication->getData('funders') ?? [];
         $locale = $publication->getData('locale');
         $fundingData = [];
 
@@ -545,7 +549,11 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                     $entry = ['funder' => $funderField];
                     $award = [];
 
-                    if ($ror && !empty($grant['grantNumber']) && $plugin->isValidAward($context, $ror, $grant['grantNumber']) === true) {
+                    if (
+                        $ror &&
+                        !empty($grant['grantNumber']) &&
+                        $plugin->isValidAward($context, $ror, $grant['grantNumber']) === true
+                    ) {
                         $award['id'] = $ror . '::' . $grant['grantNumber'];
                     } else {
                         if (!empty($grant['grantDoi'])) {
