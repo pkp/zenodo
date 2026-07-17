@@ -3,8 +3,8 @@
 /**
  * @file plugins/generic/zenodo/filter/ZenodoJsonFilter.php
  *
- * Copyright (c) 2025 Simon Fraser University
- * Copyright (c) 2025 John Willinsky
+ * Copyright (c) 2025-2026 Simon Fraser University
+ * Copyright (c) 2025-2026 John Willinsky
  * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
  *
  * @class ZenodoJsonFilter
@@ -33,6 +33,7 @@ use PKP\author\contributorRole\ContributorType;
 use PKP\citation\Citation;
 use PKP\context\Context;
 use PKP\core\PKPString;
+use PKP\dataCitation\DataCitation;
 use PKP\filter\FilterGroup;
 use PKP\galley\Galley;
 use PKP\i18n\LocaleConversion;
@@ -41,6 +42,26 @@ use PKP\submission\PKPSubmission;
 
 class ZenodoJsonFilter extends PKPImportExportFilter
 {
+    /**
+     * InvenioRDM resource type titles keyed by resource type id.
+     * https://github.com/inveniosoftware/invenio-rdm-records/blob/master/invenio_rdm_records/fixtures/data/vocabularies/resource_types.yaml
+     */
+    private const RESOURCE_TYPE_TITLES = [
+        'publication-article' => 'Journal article',
+        'publication-journal' => 'Journal',
+        'publication-book' => 'Book',
+        'publication-section' => 'Book chapter',
+        'publication-conferencepaper' => 'Conference paper',
+        'publication-conferenceproceeding' => 'Conference proceeding',
+        'publication-preprint' => 'Preprint',
+        'publication-report' => 'Report',
+        'publication-standard' => 'Standard',
+        'publication-dissertation' => 'Thesis',
+        'publication-peerreview' => 'Peer review',
+        'publication-other' => 'Other',
+        'dataset' => 'Dataset',
+    ];
+
     /**
      * Constructor
      *
@@ -155,9 +176,13 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         // Publication date
         if ($publication->getData('datePublished')) {
-            $article['metadata']['publication_date'] = Carbon::parse($publication->getData('datePublished'))->format('Y-m-d');
+            $article['metadata']['publication_date'] = Carbon::parse(
+                $publication->getData('datePublished')
+            )->format('Y-m-d');
         } elseif ($issue?->getDatePublished()) {
-            $article['metadata']['publication_date'] = Carbon::parse($issue->getDatePublished())->format('Y-m-d');
+            $article['metadata']['publication_date'] = Carbon::parse(
+                $issue->getDatePublished()
+            )->format('Y-m-d');
         }
 
         // Publisher name
@@ -175,6 +200,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             foreach ($citations as $citation) { /** @var Citation $citation */
                 $referenceData = [];
                 $referenceData['reference'] = $citation->getRawCitation();
+                $resourceType = $this->getResourceTypeFromCitationType($citation->getData('type'));
 
                 foreach ($supportedIdentifiers as $identifier) {
                     if ($citation->getData($identifier)) {
@@ -183,6 +209,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                         $citedIdentifiers[] = [
                             'identifier' => $citation->getData($identifier),
                             'scheme' => $identifier,
+                            'resourceType' => $resourceType,
                         ];
                     }
                 }
@@ -198,13 +225,65 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         // Cites relations
         if (!empty($citedIdentifiers)) {
             foreach ($citedIdentifiers as $citedIdentifier) {
-                $article['metadata']['related_identifiers'][] = [
+                $relatedIdentifier = [
                     'identifier' => $citedIdentifier['identifier'],
                     'relation_type' => [
                         'id' => 'cites',
                     ],
                     'scheme' => $citedIdentifier['scheme'],
                 ];
+                if (!empty($citedIdentifier['resourceType'])) {
+                    $relatedIdentifier['resource_type'] = $citedIdentifier['resourceType'];
+                }
+                $article['metadata']['related_identifiers'][] = $relatedIdentifier;
+            }
+        }
+
+        // Data citations
+        $dataCitationSchemes = [
+            'DOI' => 'doi',
+            'ARXIV' => 'arxiv',
+            'Handle' => 'handle',
+            'ARK' => 'ark',
+            'PURL' => 'purl',
+            'ISSN' => 'issn',
+            'ISBN' => 'isbn',
+            'PMID' => 'pmid',
+            'PMCID' => 'pubmedcentral',
+            'URI' => 'url',
+        ];
+        foreach ($publication->getData('dataCitations') ?? [] as $dataCitation) { /** @var DataCitation $dataCitation */
+            $reference = $this->formatDataCitationReference($dataCitation);
+            $referenceData = ($reference !== '') ? ['reference' => $reference] : null;
+
+            $identifier = $dataCitation->identifier;
+            $scheme = $dataCitationSchemes[$dataCitation->identifierType] ?? null;
+            if (!$identifier || !$scheme) {
+                $identifier = $dataCitation->url;
+                $scheme = $identifier ? 'url' : null;
+            }
+
+            if ($identifier && $scheme) {
+                $relationType = match ($dataCitation->relationshipType) {
+                    'generated', 'supporting' => 'issupplementedby',
+                    default => 'cites', // analyzed, non-analyzed
+                };
+                if ($referenceData !== null) {
+                    $referenceData['identifier'] = $identifier;
+                    $referenceData['scheme'] = $scheme;
+                }
+                $article['metadata']['related_identifiers'][] = [
+                    'identifier' => $identifier,
+                    'relation_type' => [
+                        'id' => $relationType,
+                    ],
+                    'scheme' => $scheme,
+                    'resource_type' => $this->resourceType('dataset'),
+                ];
+            }
+
+            if ($referenceData !== null) {
+                $article['metadata']['references'][] = $referenceData;
             }
         }
 
@@ -231,6 +310,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 'id' => 'isidenticalto'
             ],
             'scheme' => 'url',
+            'resource_type' => $this->resourceType('publication-article'),
         ];
 
         // Online ISSN relation
@@ -242,6 +322,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                     'id' => 'ispublishedin'
                 ],
                 'scheme' => 'issn',
+                'resource_type' => $this->resourceType('publication-journal'),
             ];
         }
 
@@ -254,6 +335,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                     'id' => 'ispublishedin'
                 ],
                 'scheme' => 'issn',
+                'resource_type' => $this->resourceType('publication-journal'),
             ];
         }
 
@@ -271,10 +353,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                         'id' => 'isreviewedby'
                     ],
                     'scheme' => 'doi',
-                    'resource_type' => [
-                        'id' => 'publication-peerreview',
-                        'title' => ['en' => 'Peer review']
-                    ]
+                    'resource_type' => $this->resourceType('publication-peerreview'),
                 ];
             }
         }
@@ -306,6 +385,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                         ],
                         'identifier' => $previousDoi,
                         'scheme' => 'doi',
+                        'resource_type' => $this->resourceType('publication-article'),
                     ];
                 }
             }
@@ -354,7 +434,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                 'copyrightYear' => $publication->getData('copyrightYear'),
                 'copyrightHolder' => $publication->getData('copyrightHolder', $publicationLocale)
             ]);
-        };
+        }
 
         // License
         $licenseUrl = $publication->getData('licenseUrl') ?? $context->getData('licenseUrl') ?? '';
@@ -399,6 +479,73 @@ class ZenodoJsonFilter extends PKPImportExportFilter
 
         $json = json_encode($article, JSON_UNESCAPED_SLASHES);
         return $json;
+    }
+
+    /**
+     * Helper function returning an InvenioRDM resource type array (id and title) for a resource type id.
+     */
+    private function resourceType(string $resourceTypeId): array
+    {
+        return ['id' => $resourceTypeId, 'title' => ['en' => self::RESOURCE_TYPE_TITLES[$resourceTypeId]]];
+    }
+
+    /**
+     * Helper function mapping a citation type to an InvenioRDM resource type.
+     */
+    private function getResourceTypeFromCitationType(?string $citationType): ?array
+    {
+        if (empty($citationType)) {
+            return null;
+        }
+
+        $resourceTypeId = match ($citationType) {
+            'journal-article', 'editorial', 'letter', 'review' => 'publication-article',
+            'journal', 'journal-issue', 'journal-volume' => 'publication-journal',
+            'book', 'book-series', 'book-set', 'edited-book', 'monograph', 'reference-book' => 'publication-book',
+            'book-chapter', 'book-section', 'book-part', 'book-track', 'reference-entry' => 'publication-section',
+            'proceedings-article' => 'publication-conferencepaper',
+            'proceedings', 'proceedings-series' => 'publication-conferenceproceeding',
+            'preprint', 'posted-content' => 'publication-preprint',
+            'report', 'report-component', 'report-series' => 'publication-report',
+            'standard' => 'publication-standard',
+            'dissertation' => 'publication-dissertation',
+            'peer-review' => 'publication-peerreview',
+            'dataset', 'database' => 'dataset',
+            default => 'publication-other',
+        };
+
+        return $this->resourceType($resourceTypeId);
+    }
+
+    /**
+     * Helper function to build a reference string for a data citation.
+     */
+    private function formatDataCitationReference(DataCitation $dataCitation): string
+    {
+        $parts = [];
+
+        $names = [];
+        foreach (is_array($dataCitation->authors) ? $dataCitation->authors : [] as $author) {
+            $name = trim(($author['familyName'] ?? '') . ', ' . ($author['givenName'] ?? ''), ' ,');
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+        if (!empty($names)) {
+            $parts[] = implode('; ', $names);
+        }
+
+        if ($dataCitation->year) {
+            $parts[] = '(' . $dataCitation->year . ')';
+        }
+        if ($dataCitation->title) {
+            $parts[] = $dataCitation->title;
+        }
+        if ($dataCitation->repository) {
+            $parts[] = $dataCitation->repository;
+        }
+
+        return implode('. ', $parts);
     }
 
     /**
@@ -526,14 +673,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $deployment = $this->getDeployment();
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
-
-        // @todo look into COST Action from example
-
-        //  # Example of a COST Action (technically COST is a cascading grant, which is why it is not included in CORDIS). OSCARS is a similar example of cascading grants. We are in contact with COST in order to be able to import their grants into Zenodo and OpenAIRE database.
-        //   {
-        //    "award": {"title": {"en": "Blastocystis under One Health"}, "number": "CA21105", "identifiers": [{"identifier": "https://www.cost.eu/actions/CA21105/", "scheme": "url"}]},
-        //    "funder": {"id": "00k4n6c32"}
-        //   },
 
         $funders = $publication->getData('funders') ?? [];
         $locale = $publication->getData('locale');
