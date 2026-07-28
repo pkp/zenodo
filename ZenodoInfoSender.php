@@ -3,8 +3,8 @@
 /**
  * @file plugins/generic/zenodo/ZenodoInfoSender.php
  *
- * Copyright (c) 2025 Simon Fraser University
- * Copyright (c) 2025 John Willinsky
+ * Copyright (c) 2025-2026 Simon Fraser University
+ * Copyright (c) 2025-2026 John Willinsky
  * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
  *
  * @class ZenodoInfoSender
@@ -94,14 +94,16 @@ class ZenodoInfoSender extends ScheduledTask
     protected function getJournals(): array
     {
         $plugin = $this->plugin;
+        PluginRegistry::loadCategory('generic');
+        $genericPlugin = PluginRegistry::getPlugin('generic', 'zenodoplugin');
         $contextDao = Application::getContextDAO();
         $journalFactory = $contextDao->getAll(true);
 
         $journals = [];
-        while ($journal = $journalFactory->next()) { /** @var  Journal $journal */
+        while ($journal = $journalFactory->next()) { /** @var Journal $journal */
             $journalId = $journal->getId();
             if (
-                !$plugin->getSetting($journalId, 'enabled') ||
+                ($genericPlugin && !$genericPlugin->getEnabled($journalId)) ||
                 !$plugin->getSetting($journalId, 'apiKey') ||
                 !$plugin->getSetting($journalId, 'automaticRegistration')
             ) {
