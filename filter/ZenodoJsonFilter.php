@@ -94,11 +94,23 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $cache = $plugin->getCache();
 
         if ($pubObject instanceof Submission) {
+            $submission = $pubObject;
             $publication = $pubObject->getCurrentPublication();
             $submissionId = $pubObject->getId();
+            if (!$cache->isCached('articles', $submissionId)) {
+                $cache->add($submission, null);
+            }
         } elseif ($pubObject instanceof Publication) {
             $publication = $pubObject;
             $submissionId = $pubObject->getData('submissionId');
+            if ($cache->isCached('articles', $submissionId)) {
+                $submission = $cache->get('articles', $submissionId); /** @var Submission $submission */
+            } else {
+                $submission = Repo::submission()->get($submissionId, $context->getId());
+                if ($submission) {
+                    $cache->add($submission, null);
+                }
+            }
         } else {
             throw new Exception('Invalid object type');
         }
@@ -406,7 +418,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Funding metadata
-        $fundingMetadata = $this->getFundingData($publication, $context);
+        $fundingMetadata = $submission ? $this->getFundingData($submission, $context, $publicationLocale) : false;
         if ($fundingMetadata) {
             $article['metadata']['funding'] = $fundingMetadata;
         }
@@ -667,15 +679,14 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     /**
      * Helper function for funding metadata.
      */
-    private function getFundingData(Publication $publication, Context $context): false|array
+    private function getFundingData(Submission $submission, Context $context, string $locale): false|array
     {
         /** @var ZenodoExportDeployment $deployment */
         $deployment = $this->getDeployment();
         /** @var ZenodoExportPlugin $plugin */
         $plugin = $deployment->getPlugin();
 
-        $funders = $publication->getData('funders') ?? [];
-        $locale = $publication->getData('locale');
+        $funders = $submission->getData('funders') ?? [];
         $fundingData = [];
 
         foreach ($funders as $funder) {
