@@ -1073,4 +1073,26 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ->each(fn (Publication $publication) => Repo::publication()->edit($publication, $editParams));
         }
     }
+
+    /**
+     * @copydoc ImportExportPlugin::executeCLI()
+     */
+    public function executeCLI($scriptName, &$args)
+    {
+    }
+
+    /**
+     * @copydoc ImportExportPlugin::usage()
+     */
+    public function usage($scriptName)
+    {
+    }
+
+    /**
+     * @copydoc ImportExportPlugin::supportsCLI()
+     */
+    public function supportsCLI(): bool
+    {
+        return false;
+    }
 }

@@ -129,12 +129,6 @@ msgstr "Creating the draft from the published record was not successful! The Zen
 msgid "plugins.importexport.zenodo.api.error.isPublished"
 msgstr "This record has been published in Zenodo and can not be updated."
 
-msgid "plugins.importexport.zenodo.cliUsage"
-msgstr ""
-"Usage:\n"
-"{$scriptName} {$pluginName} export [xmlFileName] [journal_path] articles "
-"objectId1 [objectId2] ...\n"
-
 msgid "plugins.generic.zenodo.displayName"
 msgstr "Zenodo Plugin"
 
