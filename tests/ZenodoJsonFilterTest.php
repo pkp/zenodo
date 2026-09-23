@@ -12,11 +12,14 @@
 
 namespace APP\plugins\generic\zenodo\tests;
 
+use APP\author\Author;
 use APP\plugins\generic\zenodo\filter\ZenodoJsonFilter;
 use APP\publication\Publication;
 use Carbon\Carbon;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PKP\author\contributorRole\ContributorType;
+use PKP\citation\Citation;
 use PKP\tests\PKPTestCase;
 use ReflectionMethod;
 
@@ -230,6 +233,208 @@ class ZenodoJsonFilterTest extends PKPTestCase
         ]);
 
         $this->assertSame([], $this->invoke('getAdditionalTitlesData', [$publication, 'en']));
+    }
+
+    //
+    // getContributorsData() and getPersonOrOrgData()
+    //
+    /**
+     * @param string[] $roles ContributorRoleIdentifier names
+     */
+    private function createPerson(string $given, string $family, array $roles = []): Author
+    {
+        $author = new Author();
+        $author->setData('contributorType', ContributorType::PERSON->getName());
+        $author->setData('givenName', ['en' => $given]);
+        $author->setData('familyName', ['en' => $family]);
+        $author->setData('contributorRoles', array_map(fn ($role) => ['contributor_role_identifier' => $role], $roles));
+        return $author;
+    }
+
+    private function createOrganization(string $name, ?string $rorId, array $roles = []): Author
+    {
+        $author = new Author();
+        $author->setData('contributorType', ContributorType::ORGANIZATION->getName());
+        $author->setData('organizationName', ['en' => $name]);
+        $author->setData('rorId', $rorId);
+        $author->setData('contributorRoles', array_map(fn ($role) => ['contributor_role_identifier' => $role], $roles));
+        return $author;
+    }
+
+    private function publicationWithAuthors(array $authors): Publication
+    {
+        return $this->createPublication(['authors' => collect($authors)]);
+    }
+
+    public function testAuthorsAreCreatorsAndOtherRolesAreContributors(): void
+    {
+        $publication = $this->publicationWithAuthors([
+            $this->createPerson('Ada', 'Lovelace', ['AUTHOR']),
+            $this->createPerson('Tom', 'Translator', ['TRANSLATOR']),
+            $this->createPerson('Ed', 'Editor', ['EDITOR']),
+        ]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertSame([['person_or_org' => ['given_name' => 'Ada', 'family_name' => 'Lovelace', 'type' => 'personal']]], $creators);
+        $this->assertSame([
+            ['person_or_org' => ['given_name' => 'Tom', 'family_name' => 'Translator', 'type' => 'personal'], 'role' => ['id' => 'other']],
+            ['person_or_org' => ['given_name' => 'Ed', 'family_name' => 'Editor', 'type' => 'personal'], 'role' => ['id' => 'editor']],
+        ], $contributors);
+    }
+
+    /**
+     * Nobody is listed twice: an author with other roles is a creator only.
+     */
+    public function testAnAuthorWithAnotherRoleIsACreatorOnly(): void
+    {
+        $publication = $this->publicationWithAuthors([$this->createPerson('Ada', 'Lovelace', ['AUTHOR', 'EDITOR'])]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertCount(1, $creators);
+        $this->assertSame([], $contributors);
+    }
+
+    /**
+     * A contributor with several non-author roles gets one entry, editor first.
+     */
+    public function testAContributorWithSeveralRolesGetsOneEntryWithEditorFirst(): void
+    {
+        $publication = $this->publicationWithAuthors([$this->createPerson('Ed', 'Editor', ['REVIEWER', 'EDITOR', 'TRANSLATOR'])]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertSame([], $creators);
+        $this->assertCount(1, $contributors);
+        $this->assertSame('editor', $contributors[0]['role']['id']);
+    }
+
+    /**
+     * Zenodo's vocabulary has no translator role (unlike InvenioRDM's default), so it
+     * joins the roles without an equivalent.
+     */
+    public function testRolesWithoutAnEquivalentBecomeOther(): void
+    {
+        $publication = $this->publicationWithAuthors([$this->createPerson('Rae', 'Reviewer', ['TRANSLATOR', 'REVIEWER', 'CHAIR', 'READER'])]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertSame([], $creators);
+        $this->assertCount(1, $contributors, 'Roles mapping to the same id make one entry');
+        $this->assertSame('other', $contributors[0]['role']['id']);
+    }
+
+    /**
+     * Contributors from before roles existed hold none; they are still the authors.
+     */
+    public function testWithoutAnyRolesEveryoneIsACreator(): void
+    {
+        $publication = $this->publicationWithAuthors([
+            $this->createPerson('Ada', 'Lovelace'),
+            $this->createPerson('Bob', 'Babbage'),
+        ]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertCount(2, $creators);
+        $this->assertSame([], $contributors);
+    }
+
+    /**
+     * Once roles are in use, a contributor without one is neither creator nor contributor.
+     */
+    public function testARolelessContributorIsSkippedWhenRolesAreInUse(): void
+    {
+        $publication = $this->publicationWithAuthors([
+            $this->createPerson('Ada', 'Lovelace', ['AUTHOR']),
+            $this->createPerson('Bob', 'Babbage'),
+        ]);
+
+        [$creators, $contributors] = $this->invoke('getContributorsData', [$publication, 'en']);
+
+        $this->assertCount(1, $creators);
+        $this->assertSame([], $contributors);
+    }
+
+    public function testAnOrganizationCarriesItsRorAsAnIdentifier(): void
+    {
+        $organization = $this->createOrganization('Public Knowledge Project', 'https://ror.org/03rmrcq20', ['AUTHOR']);
+
+        $this->assertSame(
+            ['person_or_org' => [
+                'name' => 'Public Knowledge Project',
+                'type' => 'organizational',
+                'identifiers' => [['identifier' => '03rmrcq20', 'scheme' => 'ror']],
+            ]],
+            $this->invoke('getPersonOrOrgData', [$organization, 'en'])
+        );
+    }
+
+    public function testAnOrganizationWithoutANameIsSkipped(): void
+    {
+        $this->assertNull($this->invoke('getPersonOrOrgData', [$this->createOrganization('', '03rmrcq20'), 'en']));
+    }
+
+    public static function rorIdProvider(): array
+    {
+        return [
+            'bare id' => ['03rmrcq20', '03rmrcq20'],
+            'https url' => ['https://ror.org/03rmrcq20', '03rmrcq20'],
+            'http url' => ['http://ror.org/03rmrcq20', '03rmrcq20'],
+            'upper case, padded' => ['  03RMRCQ20 ', '03rmrcq20'],
+            'organization name typed instead' => ['Simon Fraser University', null],
+            'wrong length' => ['03rmrcq2', null],
+            'not starting with zero' => ['13rmrcq20', null],
+            'another url' => ['https://example.org/03rmrcq20', null],
+            'empty' => ['', null],
+            'null' => [null, null],
+        ];
+    }
+
+    /**
+     * The ROR field is free text in OJS; only what InvenioRDM's validator accepts is sent.
+     */
+    #[DataProvider('rorIdProvider')]
+    public function testOnlyAValidRorIdIsSent(?string $text, ?string $expected): void
+    {
+        $this->assertSame($expected, $this->invoke('normalizeRorId', [$text]));
+    }
+
+    //
+    // getCitationIdentifierScheme()
+    //
+    private function createCitation(array $identifiers): Citation
+    {
+        $citation = new Citation();
+        foreach ($identifiers as $scheme => $value) {
+            $citation->setData($scheme, $value);
+        }
+        return $citation;
+    }
+
+    /**
+     * A cited work is related once, by its most persistent identifier, rather than
+     * once per identifier it carries.
+     */
+    public function testTheMostPersistentCitationIdentifierWins(): void
+    {
+        $citation = $this->createCitation(['url' => 'https://example.org/a', 'doi' => '10.1234/a', 'arxiv' => '2101.00001']);
+
+        $this->assertSame('doi', $this->invoke('getCitationIdentifierScheme', [$citation]));
+    }
+
+    public function testCitationIdentifiersFallBackInOrder(): void
+    {
+        $this->assertSame('handle', $this->invoke('getCitationIdentifierScheme', [$this->createCitation(['url' => 'https://example.org/a', 'handle' => '1234/5'])]));
+        $this->assertSame('arxiv', $this->invoke('getCitationIdentifierScheme', [$this->createCitation(['urn' => 'urn:x', 'arxiv' => '2101.00001'])]));
+        $this->assertSame('url', $this->invoke('getCitationIdentifierScheme', [$this->createCitation(['url' => 'https://example.org/a'])]));
+    }
+
+    public function testACitationWithoutIdentifiersHasNoScheme(): void
+    {
+        $this->assertNull($this->invoke('getCitationIdentifierScheme', [$this->createCitation([])]));
+        $this->assertNull($this->invoke('getCitationIdentifierScheme', [$this->createCitation(['doi' => ''])]));
     }
 
     //

@@ -788,6 +788,101 @@ class ZenodoExportPluginTest extends PKPTestCase
     }
 
     //
+    // Published records and communities
+    //
+    public function testARecordAlreadyInTheCommunityIsRecognised(): void
+    {
+        $this->mockHttp([$this->jsonResponse(200, ['id' => '123', 'parent' => ['communities' => ['ids' => ['c1', 'c2'], 'default' => 'c1']]])]);
+
+        $this->assertTrue($this->createPlugin()->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key'));
+        $this->assertSame([['GET', '/api/records/123']], $this->requestsMade());
+    }
+
+    public function testARecordInOtherCommunitiesIsNotInThisOne(): void
+    {
+        $this->mockHttp([$this->jsonResponse(200, ['id' => '123', 'parent' => ['communities' => ['ids' => ['c1']]]])]);
+
+        $this->assertFalse($this->createPlugin()->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key'));
+    }
+
+    public function testARecordWithoutCommunitiesIsNotInThisOne(): void
+    {
+        $this->mockHttp([$this->jsonResponse(200, ['id' => '123', 'parent' => ['id' => 'p1']])]);
+
+        $this->assertFalse($this->createPlugin()->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key'));
+    }
+
+    public function testAFailedCommunityCheckIsAnError(): void
+    {
+        $this->mockHttp([new Response(500)]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->once())->method('updateStatus')->with($this->anything(), PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+
+        $result = $plugin->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key');
+
+        $this->assertSame('plugins.importexport.zenodo.api.error.communityCheckError', $result[0][0]);
+    }
+
+    public function testSubmittingAPublishedRecordReturnsTheInclusionRequestId(): void
+    {
+        $this->mockHttp([$this->jsonResponse(200, ['processed' => [['community' => 'c2', 'request_id' => 'r9']]])]);
+
+        $this->assertSame(
+            'r9',
+            $this->createPlugin()->submitReviewPublished($this->createSubmissionWithZenodoId('123'), '123', self::RECORDS_URL, 'key', 'c2')
+        );
+        $this->assertSame([['POST', '/api/records/123/communities']], $this->requestsMade());
+    }
+
+    /**
+     * Zenodo refuses a record that is already included or already requested. That
+     * is the state the plugin wanted, not a failure to record and retry.
+     */
+    public function testAnAlreadyIncludedRefusalIsNotAnError(): void
+    {
+        $this->mockHttp([new Response(400, [], '{"errors": [{"community": "c2", "message": "The record is already included in this community."}]}')]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->never())->method('updateStatus');
+
+        $this->assertNull($plugin->submitReviewPublished($this->createSubmissionWithZenodoId('123'), '123', self::RECORDS_URL, 'key', 'c2'));
+    }
+
+    /**
+     * A pending inclusion request the plugin did not record can not be accepted, so
+     * the caller is told it is open rather than handed a null id.
+     */
+    public function testAPendingInclusionRequestIsReportedAsOpen(): void
+    {
+        $this->mockHttp([new Response(400, [], '{"errors": [{"community": "c2", "message": "There is already an open inclusion request for this community."}]}')]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->never())->method('updateStatus');
+
+        $this->assertSame(
+            ZenodoExportPlugin::REVIEW_OPEN,
+            $plugin->submitReviewPublished($this->createSubmissionWithZenodoId('123'), '123', self::RECORDS_URL, 'key', 'c2')
+        );
+    }
+
+    public function testAnyOtherCommunitySubmissionFailureIsAnError(): void
+    {
+        $this->mockHttp([new Response(403, [], '{"message":"Permission denied."}')]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->once())->method('updateStatus')->with($this->anything(), PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+
+        $result = $plugin->submitReviewPublished($this->createSubmissionWithZenodoId('123'), '123', self::RECORDS_URL, 'key', 'c2');
+
+        $this->assertSame('plugins.importexport.zenodo.api.error.submitPublishedCommunityError', $result[0][0]);
+    }
+
+    public function testAPublishedRecordWithoutAStoredRequestIsNotLookedUp(): void
+    {
+        $this->mockHttp([]);
+
+        $this->assertNull($this->createPlugin()->getReviewRequest($this->createSubmissionWithZenodoId('123'), '123', self::API_URL, 'key', true));
+        $this->assertSame([], $this->requestsMade());
+    }
+
+    //
     // isRecordPublished()
     //
     public function testAPublishedRecordIsReported(): void

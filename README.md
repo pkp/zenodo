@@ -53,6 +53,15 @@ marked as failed with a message naming what is missing. Metadata-only records ar
 journal's publisher and ISSN are included in every record, and the plugin page shows a reminder when
 either is not set.
 
+### Contributors
+
+Each contributor is listed once. Contributors with the Author role are the record's creators, whatever other
+roles they hold. The others become contributor entries in Zenodo with one role: Editor has an equivalent and
+takes priority, and the rest (translators, reviewers, chairs, readers, other) are sent as "Other", since
+Zenodo's vocabulary has no translator role. CRediT roles have no equivalent in Zenodo's
+vocabulary and are not sent. An organization contributor's ROR ID is sent when it is a ROR ID or a
+ror.org URL; other text in that field is ignored.
+
 ### DOIs
 
 By default, the plugin expects that exported records have a DOI, and records will not be exported if a DOI
@@ -71,6 +80,9 @@ DOI Zenodo reserved for it and any community review request that is still open. 
 replaced with the current galley files. If the draft was removed in Zenodo, a new one is created. Once a
 record is published in Zenodo, later deposits update its metadata only, since Zenodo does not allow the
 files of a published record to change.
+
+A published record that is already in the community, or whose inclusion request is still pending, is not
+submitted to it again when its metadata is updated.
 
 If a published record is deleted in Zenodo, only a tombstone remains and it can not be updated. The next
 deposit then creates a new record. Zenodo releases an external DOI when the record is deleted, so the new
@@ -91,7 +103,14 @@ a setting for automatic publishing, but it's important to note that a record in 
 
 ### Funder Metadata
 
-If the Funder metadata is enabled, the plugin will add funding metadata to the exported record.
+If the Funder metadata is enabled, the plugin adds funding metadata to the exported record. A funder is
+sent by its ROR ID when it has one, otherwise by name. Each of the funder's grants becomes an award:
+
+- A grant number that Zenodo's awards database knows for that funder is sent as that award, so Zenodo
+  links it to the funder's programme.
+- Otherwise the grant is sent as a custom award with its number and name, and its DOI as an identifier.
+  Zenodo requires a custom award to have a number or a name; a grant that has only a DOI is left out of
+  the award, though the funder itself is still sent.
 
 ### Embargoes and Restricted Data
 

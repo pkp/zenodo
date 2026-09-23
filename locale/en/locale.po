@@ -137,6 +137,9 @@ msgstr "The record was updated in Zenodo, but its community review request is al
 msgid "plugins.importexport.zenodo.api.error.reviewCheckError"
 msgstr "Checking for a review request was not successful! The Zenodo API returned an error: '{$param}'."
 
+msgid "plugins.importexport.zenodo.api.error.communityCheckError"
+msgstr "Checking the record's communities was not successful! The Zenodo API returned an error: '{$param}'."
+
 msgid "plugins.importexport.zenodo.api.error.submitPublishedCommunityError"
 msgstr "Submitting the published record to the community was not successful! The Zenodo API returned an error: '{$param}'."
 

@@ -30,6 +30,7 @@ use APP\submission\Submission;
 use Carbon\Carbon;
 use Exception;
 use PKP\affiliation\Affiliation;
+use PKP\author\contributorRole\ContributorRoleIdentifier;
 use PKP\author\contributorRole\ContributorType;
 use PKP\citation\Citation;
 use PKP\context\Context;
@@ -135,7 +136,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article = [];
 
         // Access Rights
-        $status = 'open';
         $fileAccess = 'public';
         $embargoUntil = null;
 
@@ -147,11 +147,9 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         ) {
             $openAccessDate = $issue->getOpenAccessDate() ? Carbon::parse($issue->getOpenAccessDate()) : null;
             if (!$openAccessDate) {
-                $status = 'restricted';
                 $fileAccess = 'restricted';
             } elseif ($openAccessDate->isFuture()) {
                 // Zenodo requires the embargo date to be in the future; a past date means the issue is open.
-                $status = 'embargoed';
                 $fileAccess = 'restricted';
                 $embargoUntil = $openAccessDate;
             }
@@ -160,7 +158,6 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $article['access'] = [
             'files' => $fileAccess,
             'record' => 'public', // only files can be restricted
-            'status' => $status,
         ];
 
         if ($embargoUntil) {
@@ -197,10 +194,13 @@ class ZenodoJsonFilter extends PKPImportExportFilter
             $article['metadata']['additional_titles'] = $additionalTitles;
         }
 
-        // Authors: name, affiliations and ORCID
-        if ($publication->getData('authors')->isNotEmpty()) {
-            $authorsData = $this->getAuthorsData($publication, $publicationLocale);
-            $article['metadata']['creators'] = $authorsData;
+        // Creators and contributors: names, identifiers, affiliations and roles
+        [$creators, $contributors] = $this->getContributorsData($publication, $publicationLocale);
+        if (!empty($creators)) {
+            $article['metadata']['creators'] = $creators;
+        }
+        if (!empty($contributors)) {
+            $article['metadata']['contributors'] = $contributors;
         }
 
         // Abstract (InvenioRDM accepts sanitized HTML) and translated abstracts
@@ -239,24 +239,21 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $citations = $publication->getData('citations') ?? [];
         if (!empty($citations)) {
             $citedIdentifiers = [];
-            $supportedIdentifiers = [
-                'arxiv','doi', 'handle', 'url', 'urn'
-            ];
             foreach ($citations as $citation) { /** @var Citation $citation */
                 $referenceData = [];
                 $referenceData['reference'] = $citation->getRawCitation();
                 $resourceType = $this->getResourceTypeFromCitationType($citation->getData('type'));
 
-                foreach ($supportedIdentifiers as $identifier) {
-                    if ($citation->getData($identifier)) {
-                        $referenceData['identifier'] = $citation->getData($identifier);
-                        $referenceData['scheme'] = $identifier;
-                        $citedIdentifiers[] = [
-                            'identifier' => $citation->getData($identifier),
-                            'scheme' => $identifier,
-                            'resourceType' => $resourceType,
-                        ];
-                    }
+                // One identifier per cited work
+                $scheme = $this->getCitationIdentifierScheme($citation);
+                if ($scheme) {
+                    $referenceData['identifier'] = $citation->getData($scheme);
+                    $referenceData['scheme'] = $scheme;
+                    $citedIdentifiers[] = [
+                        'identifier' => $citation->getData($scheme),
+                        'scheme' => $scheme,
+                        'resourceType' => $resourceType,
+                    ];
                 }
 
                 $article['metadata']['references'][] = $referenceData;
@@ -643,6 +640,20 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /**
+     * The scheme of the identifier to send for a cited work, preferring the most
+     * persistent one it carries, or null when it has none.
+     */
+    private function getCitationIdentifierScheme(Citation $citation): ?string
+    {
+        foreach (['doi', 'handle', 'arxiv', 'urn', 'url'] as $scheme) {
+            if ($citation->getData($scheme)) {
+                return $scheme;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Helper function mapping a citation type to an InvenioRDM resource type.
      */
     private function getResourceTypeFromCitationType(?string $citationType): ?array
@@ -749,72 +760,141 @@ class ZenodoJsonFilter extends PKPImportExportFilter
     }
 
     /**
-     * Helper function for authors metadata.
+     * Zenodo contributor roles for the OJS contributor roles that are not "author".
+     * Zenodo's vocabulary differs from InvenioRDM's default: it has no "translator", so
+     * every role but editor (translator, reviewer, chair, reader...) is "other".
+     * https://zenodo.org/api/vocabularies/contributorsroles
      */
-    private function getAuthorsData(Publication $publication, string $publicationLocale): array
+    private function getContributorRoleId(string $roleIdentifier): string
     {
-        $articleAuthors = $publication->getData('authors');
-        $authorsData = [];
+        return match ($roleIdentifier) {
+            ContributorRoleIdentifier::EDITOR->getName() => 'editor',
+            default => 'other',
+        };
+    }
+
+    /**
+     * Helper function for creators and contributors.
+     *
+     * Each contributor appears once. Those holding the author role are creators,
+     * whatever else they hold; the others are contributors with one role, editor
+     * taking priority over "other". Contributors from before roles existed hold none
+     * at all; when that is true of everyone, everyone is a creator.
+     *
+     * @return array{0: array, 1: array} [creators, contributors]
+     */
+    private function getContributorsData(Publication $publication, string $publicationLocale): array
+    {
+        $creators = [];
+        $contributors = [];
+        $authorRole = ContributorRoleIdentifier::AUTHOR->getName();
+        $articleAuthors = collect($publication->getData('authors') ?? []);
+        $anyRole = $articleAuthors->contains(
+            fn (Author $articleAuthor) => !empty($articleAuthor->getContributorRoleIdentifiers())
+        );
 
         foreach ($articleAuthors as $articleAuthor) { /** @var Author $articleAuthor */
-            $author = [];
-            $contributorType = $articleAuthor->getData('contributorType');
+            $entry = $this->getPersonOrOrgData($articleAuthor, $publicationLocale);
+            if (!$entry) {
+                continue;
+            }
 
-            if ($contributorType === ContributorType::PERSON->getName()) {
-                // Family name is required by Zenodo
-                if (empty($articleAuthor->getFamilyName($publicationLocale))) {
-                    $author['family_name'] = $articleAuthor->getGivenName($publicationLocale);
-                } else {
-                    if ($articleAuthor->getGivenName($publicationLocale)) {
-                        $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
-                    }
-                    if ($articleAuthor->getFamilyName($publicationLocale)) {
-                        $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
-                    }
-                }
-                $author['type'] = 'personal';
-                if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
-                    $author['identifiers'][] = [
-                        'identifier' => basename(parse_url($articleAuthor->getOrcid(), PHP_URL_PATH)),
-                        'scheme' => 'orcid',
-                    ];
-                }
-                $affiliations = $articleAuthor->getAffiliations();
-                if (count($affiliations) > 0) {
-                    $affiliationsData = [];
-                    foreach ($affiliations as $affiliation) { /** @var Affiliation $affiliation */
-                        if ($affiliation->getRor()) {
-                            $affiliationsData[] = [
-                                'id' => str_replace('https://ror.org/', '', $affiliation->getRor()),
-                                'name' => $affiliation->getAffiliationName($publicationLocale),
-                            ];
-                        } elseif ($affiliation->getAffiliationName($publicationLocale)) {
-                            $affiliationsData[] = [
-                                'name' => $affiliation->getAffiliationName($publicationLocale),
-                            ];
-                        }
-                    }
-                    $authorsData[] = [
-                        'person_or_org' => $author,
-                        'affiliations' => $affiliationsData
-                    ];
-                } else {
-                    $authorsData[] = ['person_or_org' => $author];
-                }
-            } elseif ($contributorType === ContributorType::ORGANIZATION->getName()) {
-                // @todo add ROR as well? or just part of affiliations same as for person?
-                if ($articleAuthor->getOrganizationName($publicationLocale)) {
-                    $author['name'] = $articleAuthor->getOrganizationName($publicationLocale);
-                    $author['type'] = 'organizational';
-                    $authorsData[] = ['person_or_org' => $author];
-                }
-            } elseif ($contributorType === ContributorType::ANONYMOUS->getName()) {
-                $author['family_name'] = 'Anonymous';
-                $author['type'] = 'personal';
-                $authorsData[] = ['person_or_org' => $author];
+            $roles = $articleAuthor->getContributorRoleIdentifiers();
+            if (!$anyRole || in_array($authorRole, $roles)) {
+                $creators[] = $entry;
+                continue;
+            }
+
+            $roleIds = array_map(fn (string $roleIdentifier) => $this->getContributorRoleId($roleIdentifier), $roles);
+            if (!empty($roleIds)) {
+                $contributors[] = $entry + ['role' => ['id' => in_array('editor', $roleIds) ? 'editor' : 'other']];
             }
         }
-        return $authorsData;
+
+        return [$creators, $contributors];
+    }
+
+    /**
+     * Helper function for one creator or contributor entry: the person or organization
+     * with its identifiers, plus affiliations for a person. Null when there is nothing
+     * to send.
+     */
+    private function getPersonOrOrgData(Author $articleAuthor, string $publicationLocale): ?array
+    {
+        $contributorType = $articleAuthor->getData('contributorType');
+        $author = [];
+
+        if ($contributorType === ContributorType::PERSON->getName()) {
+            // Family name is required by Zenodo
+            if (empty($articleAuthor->getFamilyName($publicationLocale))) {
+                $author['family_name'] = $articleAuthor->getGivenName($publicationLocale);
+            } else {
+                if ($articleAuthor->getGivenName($publicationLocale)) {
+                    $author['given_name'] = $articleAuthor->getGivenName($publicationLocale);
+                }
+                $author['family_name'] = $articleAuthor->getFamilyName($publicationLocale);
+            }
+            $author['type'] = 'personal';
+            if ($articleAuthor->getOrcid() && $articleAuthor->hasVerifiedOrcid()) {
+                $author['identifiers'][] = [
+                    'identifier' => basename(parse_url($articleAuthor->getOrcid(), PHP_URL_PATH)),
+                    'scheme' => 'orcid',
+                ];
+            }
+
+            $affiliationsData = [];
+            foreach ($articleAuthor->getAffiliations() as $affiliation) { /** @var Affiliation $affiliation */
+                if ($affiliation->getRor()) {
+                    $affiliationsData[] = [
+                        'id' => str_replace('https://ror.org/', '', $affiliation->getRor()),
+                        'name' => $affiliation->getAffiliationName($publicationLocale),
+                    ];
+                } elseif ($affiliation->getAffiliationName($publicationLocale)) {
+                    $affiliationsData[] = [
+                        'name' => $affiliation->getAffiliationName($publicationLocale),
+                    ];
+                }
+            }
+
+            return empty($affiliationsData)
+                ? ['person_or_org' => $author]
+                : ['person_or_org' => $author, 'affiliations' => $affiliationsData];
+        }
+
+        if ($contributorType === ContributorType::ORGANIZATION->getName()) {
+            if (!$articleAuthor->getOrganizationName($publicationLocale)) {
+                return null;
+            }
+            $author['name'] = $articleAuthor->getOrganizationName($publicationLocale);
+            $author['type'] = 'organizational';
+            $rorId = $this->normalizeRorId($articleAuthor->getData('rorId'));
+            if ($rorId) {
+                $author['identifiers'][] = [
+                    'identifier' => $rorId,
+                    'scheme' => 'ror',
+                ];
+            }
+            return ['person_or_org' => $author];
+        }
+
+        if ($contributorType === ContributorType::ANONYMOUS->getName()) {
+            return ['person_or_org' => ['family_name' => 'Anonymous', 'type' => 'personal']];
+        }
+
+        return null;
+    }
+
+    /**
+     * The bare ROR id from a free-text ROR field, or null when the text is not one.
+     * The pattern is the one InvenioRDM validates the "ror" scheme with, so a value it
+     * rejects is left out rather than failing the whole deposit.
+     */
+    private function normalizeRorId(?string $ror): ?string
+    {
+        if (!$ror || !preg_match('#^(?:https?://)?(?:ror\.org/)?(0\w{6}\d{2})$#i', trim($ror), $match)) {
+            return null;
+        }
+        return strtolower($match[1]);
     }
 
     /**
@@ -847,14 +927,15 @@ class ZenodoJsonFilter extends PKPImportExportFilter
                     ) {
                         $award['id'] = $ror . '::' . $grant['grantNumber'];
                     } else {
-                        if (!empty($grant['grantDoi'])) {
-                            $award['identifiers'] = [['scheme' => 'doi', 'identifier' => $grant['grantDoi']]];
-                        }
                         if (!empty($grant['grantNumber'])) {
                             $award['number'] = $grant['grantNumber'];
                         }
                         if (!empty($grant['grantName'])) {
                             $award['title'] = [LocaleConversion::getIso1FromLocale($locale) => $grant['grantName']];
+                        }
+                        // InvenioRDM requires a number or title for custom awards; identifiers alone are rejected.
+                        if (!empty($award) && !empty($grant['grantDoi'])) {
+                            $award['identifiers'] = [['scheme' => 'doi', 'identifier' => $grant['grantDoi']]];
                         }
                     }
 

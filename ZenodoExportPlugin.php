@@ -306,8 +306,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         // kept, and acceptance is what publishes the record.
         $communityId = $this->getCommunityId($context);
         $existingReview = null;
-        if ($communityId && !$isPublished) {
-            $existingReview = $this->getReviewRequest($object, $zenodoId, $zenodoApiUrl, $apiKey);
+        if ($communityId) {
+            $existingReview = $this->getReviewRequest($object, $zenodoId, $zenodoApiUrl, $apiKey, $isPublished);
             if (isset($existingReview['error'])) {
                 return [$existingReview['error']];
             }
@@ -333,9 +333,27 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         if ($communityId) {
             $requestId = null;
             if ($isPublished) {
-                $requestId = $this->submitReviewPublished($object, $zenodoId, $recordsApiUrl, $apiKey, $communityId);
-                if (is_array($requestId)) {
-                    return $requestId;
+                // A record already in the community, or with an inclusion request pending, is not submitted again.
+                if ($hasOpenReview) {
+                    $requestId = $existingReview['id'];
+                } else {
+                    $inCommunity = $this->isRecordInCommunity($object, $zenodoId, $communityId, $recordsApiUrl, $apiKey);
+                    if (is_array($inCommunity)) {
+                        return $inCommunity;
+                    }
+                    if (!$inCommunity) {
+                        $requestId = $this->submitReviewPublished($object, $zenodoId, $recordsApiUrl, $apiKey, $communityId);
+                        if (is_array($requestId)) {
+                            return $requestId;
+                        }
+                        if ($requestId === self::REVIEW_OPEN) {
+                            // An inclusion request this plugin did not record is pending; only
+                            // automatic acceptance is impossible without its id.
+                            return $this->automaticPublishingCommunity($context)
+                                ? [['plugins.importexport.zenodo.api.error.openReviewNotAccepted']]
+                                : true;
+                        }
+                    }
                 }
             } else {
                 if ($hasOpenReview) {
@@ -1156,7 +1174,9 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         string $url,
         string $apiKey,
         string $communityId
-    ): array|string {
+    ): array|string|null {
+        // Returns the inclusion request id; null when the record is already included;
+        // REVIEW_OPEN when an inclusion request is already pending; or an error.
         $submitUrl = $url . '/' . $zenodoId . '/communities';
         $httpClient = Application::get()->getHttpClient();
 
@@ -1181,15 +1201,59 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                 ]
             );
             $body = json_decode($submitCommunityResponse->getBody(), true);
-            $requestId = $body['processed'][0]['request_id'];
+            $requestId = $body['processed'][0]['request_id'] ?? null;
         } catch (RequestException $e) {
             $returnMessage = $this->getExceptionMessage($e);
+            if ($e->getCode() === 400) {
+                // "There is already an open inclusion request for this community."
+                if (stripos($returnMessage, 'open inclusion request') !== false) {
+                    return self::REVIEW_OPEN;
+                }
+                // "The record is already included in this community."
+                if (stripos($returnMessage, 'already included') !== false) {
+                    return null;
+                }
+            }
             $errorMessage = __('plugins.importexport.zenodo.api.error.submitPublishedCommunityError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
-            return [['plugins.importexport.zenodo.api.error.submitPublishedCommunityError', $errorMessage]];
+            return [['plugins.importexport.zenodo.api.error.submitPublishedCommunityError', $returnMessage]];
         }
 
         return $requestId;
+    }
+
+    /**
+     * Whether a published record is already included in a community, read from the
+     * record's parent.
+     *
+     * @return bool|array Whether it is, or an error message when the record could not be read
+     */
+    public function isRecordInCommunity(
+        Submission|Publication $object,
+        string $zenodoId,
+        string $communityId,
+        string $url,
+        string $apiKey
+    ): bool|array {
+        $httpClient = Application::get()->getHttpClient();
+        $headers = [
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $apiKey,
+        ];
+
+        try {
+            $response = $httpClient->request('GET', $url . '/' . $zenodoId, ['headers' => $headers]);
+        } catch (RequestException $e) {
+            $returnMessage = $this->getExceptionMessage($e);
+            $errorMessage = __('plugins.importexport.zenodo.api.error.communityCheckError', ['param' => $returnMessage]);
+            $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
+            return [['plugins.importexport.zenodo.api.error.communityCheckError', $returnMessage]];
+        }
+
+        $communities = json_decode($response->getBody(), true)['parent']['communities'] ?? [];
+        $ids = $communities['ids'] ?? array_column($communities['entries'] ?? [], 'id');
+
+        return in_array($communityId, $ids);
     }
 
     /**
@@ -1247,8 +1311,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
      * @return ?array The request's id, status and whether it is open; null when the draft
      *  has no request; ['error' => [message key, detail]] when the check itself failed
      */
-    public function getReviewRequest(Submission|Publication $object, string $zenodoId, string $url, string $apiKey): ?array
-    {
+    public function getReviewRequest(
+        Submission|Publication $object,
+        string $zenodoId,
+        string $url,
+        string $apiKey,
+        bool $isPublished = false
+    ): ?array {
         $httpClient = Application::get()->getHttpClient();
         $headers = [
             'Accept' => 'application/json',
@@ -1256,6 +1325,10 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         ];
 
         $requestId = $object->getData($this->getReviewRequestIdSettingName());
+        // A published record has no draft to read a request from.
+        if (!$requestId && $isPublished) {
+            return null;
+        }
         $requestUrl = $requestId
             ? $url . 'requests/' . $requestId
             : $url . self::ZENODO_API_OPERATION . '/' . $zenodoId . '/draft';
