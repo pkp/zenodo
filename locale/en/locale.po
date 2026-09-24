@@ -17,6 +17,17 @@ msgstr "Zenodo Export Plugin"
 msgid "plugins.importexport.zenodo.description"
 msgstr "Export journal articles to Zenodo."
 
+msgid "plugins.importexport.zenodo.missingFields"
+msgstr ""
+"Zenodo records carry the journal's publisher and ISSN. Please go to your <a href="
+"\"{$url}\">Journal Settings</a> and ensure you have entered them before depositing."
+
+msgid "plugins.importexport.zenodo.export.failure.missingMetadata"
+msgstr "The record can not be deposited because Zenodo requires the following metadata, which is missing: '{$param}'"
+
+msgid "plugins.importexport.zenodo.export.failure.noPdfGalley"
+msgstr "The record can not be deposited because no article PDF was found. Zenodo records must include the full text: a PDF galley in the article's language whose file type is the article text, not a supplementary or dependent file."
+
 msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account to get started."
 
@@ -71,6 +82,12 @@ msgstr ""
 "for registration. "
 "Please do not forget to disable this option for production."
 
+msgid "plugins.importexport.zenodo.submit.success"
+msgstr "The selected records have been queued for deposit to Zenodo. Each record's status is updated when its deposit runs."
+
+msgid "plugins.importexport.zenodo.export.failure.journalNotFound"
+msgstr "The journal this deposit was queued for could not be found."
+
 msgid "plugins.importexport.zenodo.senderTask.name"
 msgstr "Zenodo automatic registration task"
 
@@ -91,10 +108,7 @@ msgid "plugins.importexport.zenodo.api.error.fileError"
 msgstr "File deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.fileDeleteError"
-msgstr "Deleting the file in Zenodo was not successful! The Zenodo API returned an error: '{$param}'."
-
-msgid "plugins.importexport.zenodo.api.error.recordDeleteError"
-msgstr "Deleting the draft record in Zenodo was not successful! The Zenodo API returned an error: '{$param}'."
+msgstr "Replacing the draft's files in Zenodo was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.awardError"
 msgstr "The award validation check was not successful! The Zenodo API returned an error: '{$param}'."
@@ -114,14 +128,23 @@ msgstr "Submitting the review request to the community was not successful! The Z
 msgid "plugins.importexport.zenodo.api.error.acceptReviewError"
 msgstr "Accepting the review request to the community was not successful! The Zenodo API returned an error: '{$param}'."
 
+msgid "plugins.importexport.zenodo.api.error.reviewCancelError"
+msgstr "Cancelling the review request was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.openReviewNotAccepted"
+msgstr "The record was updated in Zenodo, but its community review request is already open and could not be accepted automatically. It will be published when the community accepts it in Zenodo."
+
 msgid "plugins.importexport.zenodo.api.error.reviewCheckError"
 msgstr "Checking for a review request was not successful! The Zenodo API returned an error: '{$param}'."
+
+msgid "plugins.importexport.zenodo.api.error.communityCheckError"
+msgstr "Checking the record's communities was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.submitPublishedCommunityError"
 msgstr "Submitting the published record to the community was not successful! The Zenodo API returned an error: '{$param}'."
 
 msgid "plugins.importexport.zenodo.api.error.noDoi"
-msgstr "An object you have selected does not have a DOI assigned. Please assign a DOI and try again."
+msgstr "The record can not be deposited because it has no DOI. Assign a DOI in OJS, or enable Zenodo DOIs in the plugin settings."
 
 msgid "plugins.importexport.zenodo.register.error.draftPublishError"
 msgstr "Creating the draft from the published record was not successful! The Zenodo API returned an error: '{$param}'."

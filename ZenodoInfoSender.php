@@ -5,7 +5,7 @@
  *
  * Copyright (c) 2025-2026 Simon Fraser University
  * Copyright (c) 2025-2026 John Willinsky
- * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
+ * Distributed under the GNU GPL v3. For full terms see the file LICENSE.
  *
  * @class ZenodoInfoSender
  *
@@ -56,6 +56,7 @@ class ZenodoInfoSender extends ScheduledTask
 
     /**
      * @copydoc ScheduledTask::executeActions()
+     *
      * @throws Exception
      */
     public function executeActions(): bool
@@ -68,16 +69,11 @@ class ZenodoInfoSender extends ScheduledTask
         $journals = $this->getJournals();
 
         foreach ($journals as $journal) {
-            if ($journal->getData(Context::SETTING_DOI_VERSIONING)) {
-                $depositablePublications = $plugin->getAllDepositablePublications($journal);
-                if (count($depositablePublications)) {
-                    $this->registerObjects($depositablePublications, 'publication=>zenodo-json', $journal);
-                }
-            } else {
-                $depositableArticles = $plugin->getAllDepositableArticles($journal);
-                if (count($depositableArticles)) {
-                    $this->registerObjects($depositableArticles, 'article=>zenodo-json', $journal);
-                }
+            $depositableObjects = $journal->getData(Context::SETTING_DOI_VERSIONING)
+                ? $plugin->getAllDepositablePublications($journal)
+                : $plugin->getAllDepositableArticles($journal);
+            if (count($depositableObjects)) {
+                $this->registerObjects($depositableObjects, $journal);
             }
         }
 
@@ -88,8 +84,9 @@ class ZenodoInfoSender extends ScheduledTask
      * Get all journals that meet the requirements to have
      * their articles automatically sent to Zenodo.
      *
-     * @return array<Journal>
      * @throws Exception
+     *
+     * @return array<Journal>
      */
     protected function getJournals(): array
     {
@@ -116,19 +113,17 @@ class ZenodoInfoSender extends ScheduledTask
 
 
     /**
-     * Register articles or publications
+     * Queue the deposit of articles or publications
      *
      * @param array<Submission|Publication> $objects
+     *
      * @throws Exception
      */
-    protected function registerObjects(array $objects, string $filter, Journal $journal): void
+    protected function registerObjects(array $objects, Journal $journal): void
     {
         $plugin = $this->plugin;
         foreach ($objects as $object) {
-            // Get the JSON
-            $exportJson = $plugin->exportJSON($object, $filter, $journal);
-            // Deposit the JSON
-            $result = $plugin->depositXML($object, $journal, $exportJson);
+            $result = $plugin->queueDeposit($object, $journal);
             if ($result !== true) {
                 $this->addLogEntry($result);
             }
@@ -137,6 +132,7 @@ class ZenodoInfoSender extends ScheduledTask
 
     /**
      * Add execution log entry
+     *
      * @throws Exception
      */
     protected function addLogEntry(array $errors): void

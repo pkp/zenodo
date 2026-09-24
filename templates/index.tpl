@@ -1,9 +1,9 @@
 {**
  * @file plugins/generic/zenodo/templates/index.tpl
  *
- * Copyright (c) 2025 Simon Fraser University
- * Copyright (c) 2025 John Willinsky
- * Distributed under the GNU GPL v3. For full terms see the file docs/COPYING.
+ * Copyright (c) 2025-2026 Simon Fraser University
+ * Copyright (c) 2025-2026 John Willinsky
+ * Distributed under the GNU GPL v3. For full terms see the file LICENSE.
  *
  * List of operations this plugin can perform
  *}
@@ -13,6 +13,13 @@
 	<h1 class="app__pageHeading">
 		{$pageTitle}
 	</h1>
+
+	{if !$currentContext->getData('publisherInstitution') || !($currentContext->getData('onlineIssn') || $currentContext->getData('printIssn'))}
+		<p class="pkp_help">
+			{capture assign="contextSettingsUrl"}{url page="management" op="settings" path="context"}{/capture}
+			{translate key="plugins.importexport.zenodo.missingFields" url=$contextSettingsUrl}
+		</p>
+	{/if}
 
 	{if !empty($configurationErrors)}
 		{assign var="allowExport" value=false}
