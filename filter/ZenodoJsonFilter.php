@@ -230,7 +230,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Publisher name, falling back to the journal name
-        $publisher = $context->getData('publisherInstitution') ?: $context->getName($context->getPrimaryLocale());
+        $publisher = $publication->getPublisher($context) ?: $publication->getPrimaryContextName($context);
         if (!empty($publisher)) {
             $article['metadata']['publisher'] = $publisher;
         }
@@ -355,7 +355,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         ];
 
         // Online ISSN relation
-        $onlineIssn = $context->getData('onlineIssn') ?? null;
+        $onlineIssn = $publication->getOnlineIssn($context);
         if ($onlineIssn) {
             $article['metadata']['related_identifiers'][] = [
                 'identifier' => $onlineIssn,
@@ -368,7 +368,7 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         }
 
         // Print ISSN relation
-        $printIssn = $context->getData('printIssn') ?? null;
+        $printIssn = $publication->getPrintIssn($context);
         if ($printIssn) {
             $article['metadata']['related_identifiers'][] = [
                 'identifier' => $printIssn,
@@ -721,14 +721,11 @@ class ZenodoJsonFilter extends PKPImportExportFilter
         $journalData = [];
 
         // Journal title
-        $journalTitle = $context->getName($context->getPrimaryLocale());
-        $journalData['title'] = $journalTitle;
+        $journalData['title'] = $publication->getPrimaryContextName($context);
 
         // ISSN
-        if ($context->getData('onlineIssn') != '') {
-            $journalData['issn'] = $context->getData('onlineIssn');
-        } elseif ($context->getData('printIssn') != '') {
-            $journalData['issn'] = $context->getData('printIssn');
+        if ($issn = $publication->getOnlineIssn($context) ?: $publication->getPrintIssn($context)) {
+            $journalData['issn'] = $issn;
         }
 
         // Volume and Issue Number
