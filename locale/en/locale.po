@@ -61,9 +61,9 @@ msgstr ""
 
 msgid "plugins.importexport.zenodo.settings.form.automaticRegistration.description"
 msgstr ""
-"<strong>Automatic Deposit</strong>: Deposit articles automatically to Zenodo. This may "
-"take a short amount of time after publication to process (e.g. depending on "
-"your cronjob configuration)."
+"<strong>Automatic Deposit</strong>: Deposit newly published articles to Zenodo automatically. Deposits are "
+"sent once a day, so an article may take up to a day after publication to "
+"reach Zenodo."
 
 msgid "plugins.importexport.zenodo.settings.form.automaticPublishing.description"
 msgstr ""

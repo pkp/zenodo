@@ -13,6 +13,7 @@
 namespace APP\plugins\generic\zenodo\tests;
 
 use APP\author\Author;
+use APP\journal\Journal;
 use APP\plugins\generic\zenodo\filter\ZenodoJsonFilter;
 use APP\publication\Publication;
 use Carbon\Carbon;
@@ -471,5 +472,54 @@ class ZenodoJsonFilterTest extends PKPTestCase
     {
         $this->assertNull($this->invoke('getResourceTypeFromCitationType', [null]));
         $this->assertNull($this->invoke('getResourceTypeFromCitationType', ['']));
+    }
+
+    //
+    // getJournalData()
+    //
+    private function createJournal(): Journal
+    {
+        $journal = new Journal();
+        $journal->setData('primaryLocale', 'en');
+        $journal->setData('name', ['en' => 'Current Journal']);
+        $journal->setData('onlineIssn', '2222-2222');
+        $journal->setData('printIssn', '3333-3333');
+        return $journal;
+    }
+
+    /**
+     * Once published, the journal identity is the one stamped on the publication,
+     * not the journal's current settings.
+     */
+    public function testJournalDataUsesTheStampedIdentity(): void
+    {
+        $publication = $this->createPublication([
+            'contextName' => ['en' => 'Former Journal'],
+            'contextPrimaryLocale' => 'en',
+            'printIssn' => '1111-1111',
+        ]);
+
+        $this->assertSame(
+            ['title' => 'Former Journal', 'issn' => '1111-1111'],
+            $this->invoke('getJournalData', [$this->createJournal(), $publication])
+        );
+    }
+
+    public function testJournalDataHasNoIssnWhenNoneWasStamped(): void
+    {
+        $publication = $this->createPublication(['contextName' => ['en' => 'Former Journal']]);
+
+        $this->assertSame(
+            ['title' => 'Former Journal'],
+            $this->invoke('getJournalData', [$this->createJournal(), $publication])
+        );
+    }
+
+    public function testJournalDataFallsBackToTheJournalWithoutAStamp(): void
+    {
+        $this->assertSame(
+            ['title' => 'Current Journal', 'issn' => '2222-2222'],
+            $this->invoke('getJournalData', [$this->createJournal(), $this->createPublication([])])
+        );
     }
 }
