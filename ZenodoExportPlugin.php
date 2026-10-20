@@ -200,6 +200,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
+        // Refused before the status is touched, so a production deposit keeps its status.
+        $serverError = $this->validateRecordServer($object, $context);
+        if ($serverError) {
+            return [$serverError];
+        }
+
         dispatch(new ZenodoDeposit($object->getId(), $object instanceof Publication, $context->getId()));
         $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED);
 
@@ -227,7 +233,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
-        $preflightError = $this->validateRequiredMetadata($object)
+        $preflightError = $this->validateRecordServer($object, $context)
+            ?? $this->validateRequiredMetadata($object)
             ?? $this->validateGalleys($object)
             ?? $this->validateDoi($object, $context);
         if ($preflightError) {
@@ -240,7 +247,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
-        $this->forgetRecordOnOtherServer($object, $context);
+        $this->forgetSandboxRecord($object, $context);
         $existingZenodoId = $object->getData($this->getIdSettingName()) ?: null;
         $isPublished = false;
         if ($existingZenodoId) {
@@ -562,14 +569,30 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     }
 
     /**
-     * Forget a record deposited to the other Zenodo server, so the object is deposited
-     * as a new record on the server in use rather than updating an unrelated record.
+     * A record on Zenodo is never replaced by a sandbox deposit, so in test mode an object
+     * with a Zenodo record is refused.
+     *
+     * @return ?array [message key, Zenodo ID] or null when the object can be deposited
      */
-    public function forgetRecordOnOtherServer(Submission|Publication $object, Context $context): void
+    public function validateRecordServer(Submission|Publication $object, Context $context): ?array
+    {
+        $zenodoId = $object->getData($this->getIdSettingName());
+
+        return $zenodoId && $this->isTestMode($context) && !$this->isSandboxRecord($object, $context)
+            ? ['plugins.importexport.zenodo.register.error.productionRecord', $zenodoId]
+            : null;
+    }
+
+    /**
+     * Forget a sandbox record once deposits go to Zenodo, so the object is deposited as a
+     * new record there rather than updating an unrelated record with the same ID.
+     */
+    public function forgetSandboxRecord(Submission|Publication $object, Context $context): void
     {
         if (
             $object->getData($this->getIdSettingName()) &&
-            $this->isSandboxRecord($object, $context) !== $this->isTestMode($context)
+            !$this->isTestMode($context) &&
+            $this->isSandboxRecord($object, $context)
         ) {
             $this->removeZenodoId($object);
         }

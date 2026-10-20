@@ -100,6 +100,9 @@ msgstr "Zenodo automatic registration task"
 msgid "plugins.importexport.zenodo.register.error.noApiKey"
 msgstr "No Zenodo API Key was found. Please set the API key and try again."
 
+msgid "plugins.importexport.zenodo.register.error.productionRecord"
+msgstr "The record is already deposited to Zenodo (ID {$param}), so it is not deposited to the sandbox. Turn off test mode to update it."
+
 msgid "plugins.importexport.zenodo.register.error.mdsError"
 msgstr "Deposit was not successful! The Zenodo API returned an error: '{$param}'."
 
