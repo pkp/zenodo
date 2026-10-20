@@ -179,32 +179,65 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame([VersionStage::VERSION_OF_RECORD], $this->createPlugin()->getExportableVersionStages());
     }
 
-    private function createSubmissionWithRecord(): Submission
+    private function createSubmissionWithRecord(?string $sandbox): Submission
     {
         $submission = new Submission();
         $submission->setData('zenodo::id', '123');
+        $submission->setData('zenodo::sandbox', $sandbox);
         return $submission;
     }
 
-    public function testARecordLinksToZenodo(): void
+    public function testAProductionRecordLinksToZenodo(): void
     {
         $this->assertSame(
             'https://zenodo.org/records/123',
-            $this->createPlugin()->getRecordUrl($this->createSubmissionWithRecord(), $this->createJournal())
+            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord('0'), $this->createJournal())
         );
     }
 
-    public function testARecordLinksToTheSandboxInTestMode(): void
+    public function testASandboxRecordLinksToTheSandbox(): void
     {
         $this->assertSame(
             'https://sandbox.zenodo.org/records/123',
-            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord(), $this->createJournal())
+            $this->createPlugin()->getRecordUrl($this->createSubmissionWithRecord('1'), $this->createJournal())
+        );
+    }
+
+    /**
+     * A record deposited before the server was stored is taken to be on the server in use.
+     */
+    public function testARecordWithoutAStoredServerLinksToTheServerInUse(): void
+    {
+        $this->assertSame(
+            'https://sandbox.zenodo.org/records/123',
+            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord(null), $this->createJournal())
         );
     }
 
     public function testAnObjectWithoutARecordHasNoRecordUrl(): void
     {
         $this->assertNull($this->createPlugin()->getRecordUrl(new Submission(), $this->createJournal()));
+    }
+
+    public static function otherServerProvider(): array
+    {
+        return [
+            'sandbox record, production in use' => ['1', null, true],
+            'production record, sandbox in use' => ['0', '1', true],
+            'sandbox record, sandbox in use' => ['1', '1', false],
+            'production record, production in use' => ['0', null, false],
+            'no stored server' => [null, null, false],
+        ];
+    }
+
+    #[DataProvider('otherServerProvider')]
+    public function testARecordOnTheOtherServerIsForgotten(?string $sandbox, ?string $testMode, bool $forgotten): void
+    {
+        $submission = $this->createSubmissionWithRecord($sandbox);
+
+        $this->createPlugin(['testMode' => $testMode])->forgetRecordOnOtherServer($submission, $this->createJournal());
+
+        $this->assertSame($forgotten ? null : '123', $submission->getData('zenodo::id'));
     }
 
     public function testTheZenodoIdIsStoredUnderThePluginPrefix(): void
@@ -955,15 +988,17 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame('plugins.importexport.zenodo.api.error.publishCheckError', $result[0][0]);
     }
 
-    public function testForgettingARecordClearsItsIdAndRequest(): void
+    public function testForgettingARecordClearsItsIdRequestAndServer(): void
     {
         $submission = $this->createSubmissionWithZenodoId('123');
         $submission->setData('zenodo::reviewRequestId', 'r1');
+        $submission->setData('zenodo::sandbox', '1');
 
         $this->createPlugin()->removeZenodoId($submission);
 
         $this->assertNull($submission->getData('zenodo::id'));
         $this->assertNull($submission->getData('zenodo::reviewRequestId'));
+        $this->assertNull($submission->getData('zenodo::sandbox'));
     }
 
     //

@@ -240,6 +240,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
+        $this->forgetRecordOnOtherServer($object, $context);
         $existingZenodoId = $object->getData($this->getIdSettingName()) ?: null;
         $isPublished = false;
         if ($existingZenodoId) {
@@ -269,13 +270,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return $zenodoId;
         }
 
-        // Set Zenodo ID, including for all other sibling minor publications.
+        // Set Zenodo ID and its server, including for all other sibling minor publications.
+        $sandbox = $this->isTestMode($context) ? '1' : '0';
         $object->setData($this->getIdSettingName(), $zenodoId);
+        $object->setData($this->getSandboxSettingName(), $sandbox);
         $this->updateObject($object);
         if ($isPublication) {
             // Set Zenodo ID for all other sibling minor publications.
             $editParams = [
                 $this->getIdSettingName() => $zenodoId,
+                $this->getSandboxSettingName() => $sandbox,
             ];
             Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$object->getData('submissionId')])
@@ -540,7 +544,39 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     }
 
     /**
-     * Get the web page of an object's Zenodo record.
+     * Get the setting name recording whether an object's Zenodo record is on the sandbox.
+     */
+    public function getSandboxSettingName(): string
+    {
+        return $this->getPluginSettingsPrefix() . '::sandbox';
+    }
+
+    /**
+     * Whether an object's Zenodo record is on the sandbox. A record deposited before
+     * the server was stored is taken to be on the server currently in use.
+     */
+    public function isSandboxRecord(Submission|Publication $object, Context $context): bool
+    {
+        $sandbox = $object->getData($this->getSandboxSettingName());
+        return $sandbox === null ? $this->isTestMode($context) : (bool) $sandbox;
+    }
+
+    /**
+     * Forget a record deposited to the other Zenodo server, so the object is deposited
+     * as a new record on the server in use rather than updating an unrelated record.
+     */
+    public function forgetRecordOnOtherServer(Submission|Publication $object, Context $context): void
+    {
+        if (
+            $object->getData($this->getIdSettingName()) &&
+            $this->isSandboxRecord($object, $context) !== $this->isTestMode($context)
+        ) {
+            $this->removeZenodoId($object);
+        }
+    }
+
+    /**
+     * Get the web page of an object's Zenodo record, on the server it was deposited to.
      */
     public function getRecordUrl(Submission|Publication $object, Context $context): ?string
     {
@@ -549,7 +585,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return null;
         }
 
-        return ($this->isTestMode($context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'records/' . rawurlencode($zenodoId);
+        return ($this->isSandboxRecord($object, $context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'records/' . rawurlencode($zenodoId);
     }
 
     /**
@@ -568,7 +604,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         return array_merge(parent::getObjectAdditionalSettings(), [
             $this->getIdSettingName(),
             $this->getReviewRequestIdSettingName(),
-            $this->getDepositStatusSettingName()
+            $this->getDepositStatusSettingName(),
+            $this->getSandboxSettingName(),
         ]);
     }
 
@@ -1411,11 +1448,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     {
         $object->setData($this->getIdSettingName(), null);
         $object->setData($this->getReviewRequestIdSettingName(), null);
+        $object->setData($this->getSandboxSettingName(), null);
         $this->updateObject($object);
         if ($object instanceof Publication) {
             $editParams = [
                 $this->getIdSettingName() => null,
                 $this->getReviewRequestIdSettingName() => null,
+                $this->getSandboxSettingName() => null,
             ];
             Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$object->getData('submissionId')])
