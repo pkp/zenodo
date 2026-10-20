@@ -15,7 +15,10 @@
 
 namespace APP\plugins\generic\zenodo;
 
+use APP\plugins\generic\zenodo\controllers\grid\ZenodoPublicationsListGridHandler;
+use APP\plugins\generic\zenodo\controllers\grid\ZenodoSubmissionsListGridHandler;
 use APP\plugins\PubObjectsExportGenericPlugin;
+use PKP\plugins\Hook;
 use PKP\plugins\PluginRegistry;
 
 class ZenodoPlugin extends PubObjectsExportGenericPlugin
@@ -27,7 +30,30 @@ class ZenodoPlugin extends PubObjectsExportGenericPlugin
      */
     public function register($category, $path, $mainContextId = null)
     {
-        return parent::register($category, $path, $mainContextId);
+        $success = parent::register($category, $path, $mainContextId);
+        if ($success && $this->getEnabled($mainContextId)) {
+            Hook::add('LoadComponentHandler', $this->setupGridHandler(...));
+        }
+        return $success;
+    }
+
+    /**
+     * Serve the export grids with the plugin's Zenodo record column.
+     */
+    public function setupGridHandler(string $hookName, array $params): bool
+    {
+        $component = &$params[0];
+        $componentInstance = &$params[2];
+        $handlerClass = match ($component) {
+            'plugins.generic.zenodo.controllers.grid.ZenodoPublicationsListGridHandler' => ZenodoPublicationsListGridHandler::class,
+            'plugins.generic.zenodo.controllers.grid.ZenodoSubmissionsListGridHandler' => ZenodoSubmissionsListGridHandler::class,
+            default => null,
+        };
+        if (!$handlerClass) {
+            return false;
+        }
+        $componentInstance = new $handlerClass();
+        return true;
     }
 
     /**

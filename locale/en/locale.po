@@ -28,6 +28,9 @@ msgstr "The record can not be deposited because Zenodo requires the following me
 msgid "plugins.importexport.zenodo.export.failure.noPdfGalley"
 msgstr "The record can not be deposited because no article PDF was found. Zenodo records must include the full text: a PDF galley in the article's language whose file type is the article text, not a supplementary or dependent file."
 
+msgid "plugins.importexport.zenodo.grid.recordId"
+msgstr "Zenodo ID"
+
 msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account to get started."
 
