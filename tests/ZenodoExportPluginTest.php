@@ -183,6 +183,34 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame([VersionStage::VERSION_OF_RECORD], $this->createPlugin()->getExportableVersionStages());
     }
 
+    private function createSubmissionWithRecord(): Submission
+    {
+        $submission = new Submission();
+        $submission->setData('zenodo::id', '123');
+        return $submission;
+    }
+
+    public function testARecordLinksToZenodo(): void
+    {
+        $this->assertSame(
+            'https://zenodo.org/records/123',
+            $this->createPlugin()->getRecordUrl($this->createSubmissionWithRecord(), $this->createJournal())
+        );
+    }
+
+    public function testARecordLinksToTheSandboxInTestMode(): void
+    {
+        $this->assertSame(
+            'https://sandbox.zenodo.org/records/123',
+            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord(), $this->createJournal())
+        );
+    }
+
+    public function testAnObjectWithoutARecordHasNoRecordUrl(): void
+    {
+        $this->assertNull($this->createPlugin()->getRecordUrl(new Submission(), $this->createJournal()));
+    }
+
     public function testTheZenodoIdIsStoredUnderThePluginPrefix(): void
     {
         $this->assertSame('zenodo::id', $this->createPlugin()->getIdSettingName());

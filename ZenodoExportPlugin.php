@@ -55,6 +55,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public const ZENODO_API_URL = 'https://zenodo.org/api/';
     public const ZENODO_API_URL_DEV = 'https://sandbox.zenodo.org/api/';
     public const ZENODO_API_OPERATION = 'records';
+    public const ZENODO_URL = 'https://zenodo.org/';
+    public const ZENODO_URL_DEV = 'https://sandbox.zenodo.org/';
     public const REVIEW_OPEN = 'open';
     public const RECORD_DELETED = 'deleted';
 
@@ -725,6 +727,19 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public function getIdSettingName(): string
     {
         return $this->getPluginSettingsPrefix() . '::id';
+    }
+
+    /**
+     * Get the web page of an object's Zenodo record.
+     */
+    public function getRecordUrl(Submission|Publication $object, Context $context): ?string
+    {
+        $zenodoId = $object->getData($this->getIdSettingName());
+        if (!$zenodoId) {
+            return null;
+        }
+
+        return ($this->isTestMode($context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'records/' . rawurlencode($zenodoId);
     }
 
     /**
