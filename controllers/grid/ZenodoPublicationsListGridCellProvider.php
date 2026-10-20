@@ -31,15 +31,19 @@ class ZenodoPublicationsListGridCellProvider extends ExportPublishedPublications
         }
 
         $object = $row->getData();
-        $recordUrl = $this->_plugin->getRecordUrl($object, $request->getContext());
+        $context = $request->getContext();
+        $recordUrl = $this->_plugin->getRecordUrl($object, $context);
         if (!$recordUrl) {
             return [];
         }
 
+        $zenodoId = $object->getData($this->_plugin->getIdSettingName());
         return [new LinkAction(
             'zenodoRecord',
             new OpenWindowAction($recordUrl, '_blank'),
-            $object->getData($this->_plugin->getIdSettingName())
+            $this->_plugin->isSandboxRecord($object, $context)
+                ? __('plugins.importexport.zenodo.grid.sandboxRecordId', ['id' => $zenodoId])
+                : $zenodoId
         )];
     }
 

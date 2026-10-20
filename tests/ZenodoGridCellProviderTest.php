@@ -65,12 +65,13 @@ class ZenodoGridCellProviderTest extends PKPTestCase
     {
         $publication = new Publication();
         $publication->setData('zenodo::id', '614398');
+        $publication->setData('zenodo::sandbox', '1');
         $provider = new ZenodoPublicationsListGridCellProvider($this->createPlugin());
 
         $actions = $provider->getCellActions($this->createRequest(), $this->createRow($publication), $this->zenodoColumn());
 
         $this->assertCount(1, $actions);
-        $this->assertSame('614398', $actions[0]->getTitle());
+        $this->assertSame(__('plugins.importexport.zenodo.grid.sandboxRecordId', ['id' => '614398']), $actions[0]->getTitle());
         $this->assertInstanceOf(OpenWindowAction::class, $actions[0]->getActionRequest());
         $this->assertSame('https://sandbox.zenodo.org/records/614398', $actions[0]->getActionRequest()->getUrl());
     }
@@ -86,11 +87,13 @@ class ZenodoGridCellProviderTest extends PKPTestCase
     {
         $submission = new Submission();
         $submission->setData('zenodo::id', '607149');
+        $submission->setData('zenodo::sandbox', '0');
         $provider = new ZenodoSubmissionsListGridCellProvider($this->createPlugin());
 
         $actions = $provider->getCellActions($this->createRequest(), $this->createRow($submission), $this->zenodoColumn());
 
         $this->assertSame('607149', $actions[0]->getTitle());
+        $this->assertSame('https://zenodo.org/records/607149', $actions[0]->getActionRequest()->getUrl());
     }
 
     public function testTheRecordColumnHasNoLabelBesideItsLink(): void
