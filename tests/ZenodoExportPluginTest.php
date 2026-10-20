@@ -18,8 +18,10 @@ use APP\journal\Journal;
 use APP\plugins\generic\zenodo\jobs\ZenodoDeposit;
 use APP\plugins\generic\zenodo\ZenodoExportPlugin;
 use APP\plugins\PubObjectsExportPlugin;
+use APP\publication\Collector as PublicationCollector;
 use APP\publication\enums\VersionStage;
 use APP\publication\Publication;
+use APP\publication\Repository as PublicationRepository;
 use APP\submission\Submission;
 use APP\submissionFile\Repository as SubmissionFileRepository;
 use Exception;
@@ -33,6 +35,7 @@ use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\LazyCollection;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PKP\core\Registry;
@@ -69,6 +72,7 @@ class ZenodoExportPluginTest extends PKPTestCase
     protected function tearDown(): void
     {
         app()->forgetInstance(IssueRepository::class);
+        app()->forgetInstance(PublicationRepository::class);
         app()->forgetInstance(SubmissionFileRepository::class);
         parent::tearDown();
     }
@@ -736,6 +740,205 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertTrue($plugin->queueDeposit($submission, $this->createJournal()));
 
         Bus::assertDispatched(ZenodoDeposit::class, 1);
+    }
+
+    private function createVersion(int $id, VersionStage $stage, int $major, int $minor, ?string $status = null): Publication
+    {
+        return $this->createPublication([
+            'id' => $id,
+            'submissionId' => 5,
+            'versionStage' => $stage->value,
+            'versionMajor' => $major,
+            'versionMinor' => $minor,
+            'zenodo::status' => $status,
+        ]);
+    }
+
+    /**
+     * Bind the submission's published versions, in version order.
+     */
+    private function bindPublishedVersions(array $publications): void
+    {
+        $collector = $this->createMock(PublicationCollector::class);
+        foreach (['filterByContextIds', 'filterBySubmissionIds', 'filterByVersionStage', 'filterByStatus', 'orderByVersion'] as $method) {
+            $collector->method($method)->willReturnSelf();
+        }
+        $collector->method('getMany')->willReturn(LazyCollection::make($publications));
+
+        $publicationRepository = $this->createMock(PublicationRepository::class);
+        $publicationRepository->method('getCollector')->willReturn($collector);
+        $publicationRepository->method('get')->willReturnCallback(
+            fn (int $id) => collect($publications)->first(fn (Publication $p) => $p->getId() === $id)
+        );
+        app()->instance(PublicationRepository::class, $publicationRepository);
+    }
+
+    /**
+     * PMURs are queued by the Version of Record's job once it succeeds, not with it.
+     */
+    public function testQueuingAVersionOfRecordQueuesOnlyIt(): void
+    {
+        Bus::fake();
+        $pmur = $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0);
+        $vor = $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0);
+        $this->bindPublishedVersions([$pmur, $vor]);
+
+        $plugin = $this->createPlugin(['apiKey' => 'secret']);
+        $plugin->expects($this->once())
+            ->method('updateStatus')
+            ->with($vor, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED);
+
+        $this->assertTrue($plugin->queueDeposit($vor, $this->createJournal()));
+
+        Bus::assertDispatched(ZenodoDeposit::class, 1);
+    }
+
+    public function testOnlyTheLatestMinorOfEachEarlierPmurMajorIsFound(): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::AUTHOR_ORIGINAL, 1, 0),
+            $this->createVersion(2, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0),
+            $this->createVersion(3, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 1),
+            $this->createVersion(4, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 2, 0),
+            $vor = $this->createVersion(5, VersionStage::VERSION_OF_RECORD, 1, 0),
+            $this->createVersion(6, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 3, 0),
+        ]);
+
+        $found = $this->createPlugin()->findUndepositedPmurs($vor);
+
+        $this->assertSame([3, 4], array_map(fn (Publication $p) => $p->getId(), $found));
+    }
+
+    public function testRegisteredMarkedRegisteredAndQueuedPmursAreNotFoundAgain(): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+            $this->createVersion(2, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 2, 0, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED),
+            $this->createVersion(3, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 3, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR),
+            $this->createVersion(4, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 4, 0, PubObjectsExportPlugin::EXPORT_STATUS_MARKEDREGISTERED),
+            $vor = $this->createVersion(5, VersionStage::VERSION_OF_RECORD, 1, 0),
+        ]);
+
+        $found = $this->createPlugin()->findUndepositedPmurs($vor);
+
+        $this->assertSame([3], array_map(fn (Publication $p) => $p->getId(), $found));
+    }
+
+    public function testAPmurIsNotLookedForFromAnotherStage(): void
+    {
+        $pmur = $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 2, 0);
+
+        $this->assertSame([], $this->createPlugin()->findUndepositedPmurs($pmur));
+    }
+
+    //
+    // getPmursToDeposit()
+    //
+    private function pmurIdsToDeposit(): array
+    {
+        return array_map(
+            fn (Publication $p) => $p->getId(),
+            $this->createPlugin()->getPmursToDeposit($this->createJournal())
+        );
+    }
+
+    public function testTheDailyTaskSendsNewStaleAndRetryablePmursOfARegisteredVersionOfRecord(): void
+    {
+        $retryable = $this->createVersion(4, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 4, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+        $retryable->setData('zenodo::retryable', '1');
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0),
+            $this->createVersion(2, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 2, 0, PubObjectsExportPlugin::EXPORT_STATUS_STALE),
+            $this->createVersion(3, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 3, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR),
+            $retryable,
+            $this->createVersion(5, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 5, 0, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED),
+            $this->createVersion(6, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 6, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+            $this->createVersion(7, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 7, 0, PubObjectsExportPlugin::EXPORT_STATUS_MARKEDREGISTERED),
+            $this->createVersion(8, VersionStage::VERSION_OF_RECORD, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+        ]);
+
+        $this->assertSame([1, 2, 4], $this->pmurIdsToDeposit());
+    }
+
+    public static function versionOfRecordNotDepositedProvider(): array
+    {
+        return [
+            'marked registered' => [PubObjectsExportPlugin::EXPORT_STATUS_MARKEDREGISTERED],
+            'failed' => [PubObjectsExportPlugin::EXPORT_STATUS_ERROR],
+            'queued' => [PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED],
+            'not deposited' => [null],
+        ];
+    }
+
+    #[DataProvider('versionOfRecordNotDepositedProvider')]
+    public function testThePmursOfAVersionOfRecordNotInZenodoAreNotSent(?string $status): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0),
+            $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0, $status),
+        ]);
+
+        $this->assertSame([], $this->pmurIdsToDeposit());
+    }
+
+    public function testAPmurAfterTheLastRegisteredVersionOfRecordIsNotSent(): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0),
+            $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+            $this->createVersion(3, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 2, 0),
+            $this->createVersion(4, VersionStage::VERSION_OF_RECORD, 2, 0, PubObjectsExportPlugin::EXPORT_STATUS_MARKEDREGISTERED),
+        ]);
+
+        $this->assertSame([1], $this->pmurIdsToDeposit());
+    }
+
+    public function testAFailedPmurIsShownOnItsVersionOfRecordsRow(): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR),
+            $vor = $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+        ]);
+
+        $actions = $this->createPlugin()->getStatusActions($vor);
+
+        $this->assertSame(
+            __('plugins.importexport.zenodo.status.pmurFailed', ['status' => __('plugins.importexport.common.status.registered')]),
+            $actions[PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED]->getTitle()
+        );
+    }
+
+    public function testAVersionOfRecordWithoutAFailedPmurHasOnlyTheErrorAction(): void
+    {
+        $this->bindPublishedVersions([
+            $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+            $vor = $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED),
+        ]);
+
+        $actions = $this->createPlugin()->getStatusActions($vor);
+
+        $this->assertSame([PubObjectsExportPlugin::EXPORT_STATUS_ERROR], array_keys($actions));
+    }
+
+    public function testTheStatusMessageCombinesTheVersionOfRecordAndPmurFailures(): void
+    {
+        $pmur = $this->createVersion(1, VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+        $pmur->setData('zenodo_failedMsg', 'No PDF');
+        $vor = $this->createVersion(2, VersionStage::VERSION_OF_RECORD, 1, 0, PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+        $vor->setData('zenodo_failedMsg', 'No DOI');
+        $this->bindPublishedVersions([$pmur, $vor]);
+
+        $_GET['publicationId'] = 2;
+        try {
+            $message = $this->createPlugin()->getStatusMessage($this->mockRequest());
+        } finally {
+            unset($_GET['publicationId']);
+        }
+
+        $this->assertSame(
+            "No DOI\n\n" . __('plugins.importexport.zenodo.status.pmurFailedMessage', ['version' => 'PMUR 1.0', 'message' => 'No PDF']),
+            $message
+        );
     }
 
     public function testNothingIsQueuedWithoutAnApiKey(): void

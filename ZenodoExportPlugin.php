@@ -15,10 +15,13 @@
 namespace APP\plugins\generic\zenodo;
 
 use APP\core\Application;
+use APP\core\Request;
 use APP\facades\Repo;
+use APP\journal\Journal;
 use APP\plugins\generic\zenodo\filter\ZenodoJsonFilter;
 use APP\plugins\generic\zenodo\jobs\ZenodoDeposit;
 use APP\plugins\PubObjectsExportPlugin;
+use APP\publication\enums\VersionStage;
 use APP\publication\Publication;
 use APP\submission\Submission;
 use APP\template\TemplateManager;
@@ -32,6 +35,7 @@ use PKP\context\Context;
 use PKP\db\DAORegistry;
 use PKP\filter\FilterDAO;
 use PKP\galley\Galley;
+use PKP\linkAction\LinkAction;
 use PKP\notification\Notification;
 use PKP\plugins\interfaces\HasTaskScheduler;
 use PKP\scheduledTask\PKPScheduler;
@@ -202,6 +206,192 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED);
 
         return true;
+    }
+
+    /**
+     * A Published Manuscript Under Review is not exportable on its own; it is queued
+     * once a later Version of Record has been deposited. Find the latest minor of each
+     * earlier PMUR major that is not registered, marked registered or already queued.
+     *
+     * @return Publication[]
+     */
+    public function findUndepositedPmurs(Publication $publication): array
+    {
+        return array_values(array_filter(
+            $this->findEarlierPmurs($publication),
+            fn (Publication $pmur) => !in_array(
+                $pmur->getData($this->getDepositStatusSettingName()),
+                [
+                    PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED,
+                    PubObjectsExportPlugin::EXPORT_STATUS_MARKEDREGISTERED,
+                    PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED,
+                ],
+                true
+            )
+        ));
+    }
+
+    /**
+     * Find the earlier PMURs deposited with a Version of Record whose deposit failed.
+     *
+     * @return Publication[]
+     */
+    public function findFailedPmurs(Publication $publication): array
+    {
+        return array_values(array_filter(
+            $this->findEarlierPmurs($publication),
+            fn (Publication $pmur) => $pmur->getData($this->getDepositStatusSettingName()) === PubObjectsExportPlugin::EXPORT_STATUS_ERROR
+        ));
+    }
+
+    /**
+     * Find the latest minor of each PMUR major published before a Version of Record.
+     *
+     * @return Publication[]
+     */
+    protected function findEarlierPmurs(Publication $publication): array
+    {
+        if ($publication->getData('versionStage') !== VersionStage::VERSION_OF_RECORD->value) {
+            return [];
+        }
+
+        return $this->getEarlierPmurs($publication, $this->getPublishedVersions($publication->getData('submissionId')));
+    }
+
+    /**
+     * Find the PMURs the daily task deposits: those with a later Version of Record that
+     * was deposited (not only marked registered), which have not been deposited, need
+     * an update, or last failed for a reason a later attempt may get past.
+     *
+     * @return Publication[]
+     */
+    public function getPmursToDeposit(Journal $context): array
+    {
+        $submissionIds = Repo::publication()->getCollector()
+            ->filterByContextIds([$context->getId()])
+            ->filterByVersionStage(VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW->value)
+            ->filterByStatus([Publication::STATUS_PUBLISHED])
+            ->getMany()
+            ->map(fn (Publication $pmur) => $pmur->getData('submissionId'))
+            ->unique();
+
+        $pmurs = [];
+        foreach ($submissionIds as $submissionId) {
+            $versions = $this->getPublishedVersions($submissionId);
+            $registeredVersionOfRecord = collect($versions)->last(
+                fn (Publication $publication) => $publication->getData('versionStage') === VersionStage::VERSION_OF_RECORD->value
+                    && $publication->getData($this->getDepositStatusSettingName()) === PubObjectsExportPlugin::EXPORT_STATUS_REGISTERED
+            );
+            if (!$registeredVersionOfRecord) {
+                continue;
+            }
+
+            foreach ($this->getEarlierPmurs($registeredVersionOfRecord, $versions) as $pmur) {
+                $status = $pmur->getData($this->getDepositStatusSettingName());
+                if (
+                    !$status ||
+                    $status === PubObjectsExportPlugin::EXPORT_STATUS_STALE ||
+                    ($status === PubObjectsExportPlugin::EXPORT_STATUS_ERROR && $pmur->getData($this->getRetryableSettingName()))
+                ) {
+                    $pmurs[] = $pmur;
+                }
+            }
+        }
+
+        return $pmurs;
+    }
+
+    /**
+     * Get a submission's published versions in version order.
+     *
+     * @return Publication[]
+     */
+    protected function getPublishedVersions(int $submissionId): array
+    {
+        return Repo::publication()->getCollector()
+            ->filterBySubmissionIds([$submissionId])
+            ->filterByStatus([Publication::STATUS_PUBLISHED])
+            ->orderByVersion()
+            ->getMany()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Find the latest minor of each PMUR major among the versions before a Version of Record.
+     *
+     * @param Publication[] $versions The submission's published versions in version order
+     *
+     * @return Publication[]
+     */
+    protected function getEarlierPmurs(Publication $versionOfRecord, array $versions): array
+    {
+        $latestByMajor = [];
+        foreach ($versions as $earlier) {
+            if ($earlier->getId() === $versionOfRecord->getId()) {
+                break;
+            }
+            if ($earlier->getData('versionStage') === VersionStage::PUBLISHED_MANUSCRIPT_UNDER_REVIEW->value) {
+                $latestByMajor[$earlier->getData('versionMajor')] = $earlier;
+            }
+        }
+
+        return array_values($latestByMajor);
+    }
+
+    /**
+     * @copydoc PubObjectsExportPlugin::getStatusActions()
+     *
+     * PMURs are not listed in the grid, so a failed PMUR is shown on the row of the
+     * Version of Record it was deposited with.
+     */
+    public function getStatusActions(Submission|Publication $pubObject): array
+    {
+        $actions = parent::getStatusActions($pubObject);
+        $status = $pubObject->getData($this->getDepositStatusSettingName());
+        if (
+            !$pubObject instanceof Publication ||
+            !$status ||
+            $status === PubObjectsExportPlugin::EXPORT_STATUS_ERROR ||
+            !$this->findFailedPmurs($pubObject)
+        ) {
+            return $actions;
+        }
+
+        $actions[$status] = new LinkAction(
+            'failureMessage',
+            $actions[PubObjectsExportPlugin::EXPORT_STATUS_ERROR]->getActionRequest(),
+            __('plugins.importexport.zenodo.status.pmurFailed', ['status' => $this->getStatusNames()[$status] ?? $status])
+        );
+        return $actions;
+    }
+
+    /**
+     * @copydoc PubObjectsExportPlugin::getStatusMessage()
+     *
+     * A Version of Record's message also carries the failures of its earlier PMURs.
+     */
+    public function getStatusMessage(Request $request): ?string
+    {
+        $publicationId = (int) $request->getUserVar('publicationId');
+        $publication = $publicationId ? Repo::publication()->get($publicationId) : null;
+        if (!$publication) {
+            return parent::getStatusMessage($request);
+        }
+
+        $messages = array_filter([$publication->getData($this->getFailedMsgSettingName())]);
+        foreach ($this->findFailedPmurs($publication) as $pmur) {
+            $messages[] = __('plugins.importexport.zenodo.status.pmurFailedMessage', [
+                'version' => __('publication.versionStage.display', [
+                    'stage' => $pmur->getData('versionStage'),
+                    'majorNumbering' => $pmur->getData('versionMajor'),
+                    'minorNumbering' => $pmur->getData('versionMinor'),
+                ]),
+                'message' => $pmur->getData($this->getFailedMsgSettingName()),
+            ]);
+        }
+
+        return $messages ? implode("\n\n", $messages) : null;
     }
 
     /**
@@ -546,6 +736,20 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     }
 
     /**
+     * Get the setting name recording whether an object's last failure was one a later
+     * attempt may get past.
+     */
+    public function getRetryableSettingName(): string
+    {
+        return $this->getPluginSettingsPrefix() . '::retryable';
+    }
+
+    public function setRetryable(Submission|Publication $object, bool $retryable): void
+    {
+        $this->updateObject($object, [$this->getRetryableSettingName() => $retryable ? '1' : null]);
+    }
+
+    /**
      * Get a list of additional setting names that should be stored with the objects.
      */
     public function getObjectAdditionalSettings(): array
@@ -553,7 +757,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         return array_merge(parent::getObjectAdditionalSettings(), [
             $this->getIdSettingName(),
             $this->getReviewRequestIdSettingName(),
-            $this->getDepositStatusSettingName()
+            $this->getDepositStatusSettingName(),
+            $this->getRetryableSettingName(),
         ]);
     }
 

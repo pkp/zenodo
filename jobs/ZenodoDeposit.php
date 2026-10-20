@@ -78,15 +78,24 @@ class ZenodoDeposit extends BaseJob
 
         $result = $plugin->depositXML($object, $context, $json);
         if ($result === true) {
+            // PMURs are only sent once their Version of Record is in Zenodo.
+            if ($object instanceof Publication) {
+                foreach ($plugin->findUndepositedPmurs($object) as $pmur) {
+                    $plugin->queueDeposit($pmur, $context);
+                }
+            }
             return;
         }
 
         // The deposit has recorded its failure. A refused connection, a timeout or a rate
-        // limit may well succeed on a later attempt, so those are thrown for the queue to retry.
+        // limit may well succeed on a later attempt, so those are thrown for the queue to
+        // retry, and flagged so the daily task retries a PMUR once the attempts run out.
         $errorMessage = $plugin->convertErrorMessage($result[0]);
         if ($plugin->wasLastFailureTransient()) {
+            $plugin->setRetryable($object, true);
             throw new JobException($errorMessage);
         }
+        $plugin->setRetryable($object, false);
         if ($object->getData($plugin->getDepositStatusSettingName()) !== PubObjectsExportPlugin::EXPORT_STATUS_ERROR) {
             $plugin->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
         }

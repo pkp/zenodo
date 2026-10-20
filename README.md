@@ -73,6 +73,14 @@ The DOI minted in Zenodo is not saved in OJS.
 If DOI versioning is enabled in OJS, then the user can deposit each major version of an article to Zenodo as an
 individual record. The previous version will be included in the relations metadata.
 
+A Published Manuscript Under Review is not listed for export on its own. Once a Version of Record has
+been deposited, any earlier Published Manuscript Under Review of the article that is not yet in Zenodo
+is deposited after it, as its own record. A Version of Record that is only marked registered does not
+send its PMURs. With automatic deposits enabled, the daily task also sends PMURs whose Version of Record
+is in Zenodo and that have not been deposited, need an update, or last failed on a connection problem.
+A PMUR whose deposit failed is shown on its Version of Record's row; depositing the Version of Record
+again retries it.
+
 ### Updating a Deposit
 
 Depositing a record again updates the draft in Zenodo in place, so it keeps its Zenodo identifier, any

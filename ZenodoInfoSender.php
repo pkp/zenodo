@@ -70,7 +70,7 @@ class ZenodoInfoSender extends ScheduledTask
 
         foreach ($journals as $journal) {
             $depositableObjects = $journal->getData(Context::SETTING_DOI_VERSIONING)
-                ? $plugin->getAllDepositablePublications($journal)
+                ? [...$plugin->getAllDepositablePublications($journal), ...$plugin->getPmursToDeposit($journal)]
                 : $plugin->getAllDepositableArticles($journal);
             if (count($depositableObjects)) {
                 $this->registerObjects($depositableObjects, $journal);
