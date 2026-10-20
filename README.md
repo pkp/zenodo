@@ -105,10 +105,12 @@ first.
 ### Test Mode
 
 Each Zenodo identifier is stored with the server it was deposited to, and records on the sandbox are
-labelled "(Sandbox)" in the export lists. After switching between the sandbox and Zenodo, depositing an
-article whose record is on the other server creates a new record on the server in use, rather than
-updating a record with the same identifier there. Articles already marked as registered from the other
-server are not deposited automatically, so deposit them again from the export lists.
+labelled "(Sandbox)" in the export lists. After switching from the sandbox to Zenodo, depositing an
+article whose record is on the sandbox creates a new record on Zenodo, rather than updating a record with
+the same identifier there. Articles already marked as registered from the sandbox are not deposited
+automatically, so deposit them again from the export lists. A record on Zenodo is never replaced by a
+sandbox one: in test mode, depositing an article that has a Zenodo record is refused, and its identifier
+and status are left unchanged.
 
 ### Automatic Publishing
 
