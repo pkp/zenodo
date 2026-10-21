@@ -94,6 +94,16 @@ allow an open request to be replaced, deleted or published over, so the record i
 community accepts it. To submit the record to a different community, cancel the open request in Zenodo
 first.
 
+### Test Mode
+
+Each Zenodo identifier is stored with the server it was deposited to, and records on the sandbox are
+labelled "(Sandbox)" in the export lists. After switching from the sandbox to Zenodo, depositing an
+article whose record is on the sandbox creates a new record on Zenodo, rather than updating a record with
+the same identifier there. Articles already marked as registered from the sandbox are not deposited
+automatically, so deposit them again from the export lists. A record on Zenodo is never replaced by a
+sandbox one: in test mode, depositing an article that has a Zenodo record is refused, and its identifier
+and status are left unchanged.
+
 ### Automatic Publishing
 
 By default, the plugin will create a draft record in Zenodo, which can then be published in the Zenodo application.

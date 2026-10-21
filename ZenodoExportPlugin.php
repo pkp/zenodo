@@ -51,6 +51,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public const ZENODO_API_URL = 'https://zenodo.org/api/';
     public const ZENODO_API_URL_DEV = 'https://sandbox.zenodo.org/api/';
     public const ZENODO_API_OPERATION = 'records';
+    public const ZENODO_URL = 'https://zenodo.org/';
+    public const ZENODO_URL_DEV = 'https://sandbox.zenodo.org/';
     public const REVIEW_OPEN = 'open';
     public const RECORD_DELETED = 'deleted';
 
@@ -198,6 +200,12 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
+        // Refused before the status is touched, so a production deposit keeps its status.
+        $serverError = $this->validateRecordServer($object, $context);
+        if ($serverError) {
+            return [$serverError];
+        }
+
         dispatch(new ZenodoDeposit($object->getId(), $object instanceof Publication, $context->getId()));
         $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_SUBMITTED);
 
@@ -225,7 +233,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
-        $preflightError = $this->validateRequiredMetadata($object)
+        $preflightError = $this->validateRecordServer($object, $context)
+            ?? $this->validateRequiredMetadata($object)
             ?? $this->validateGalleys($object)
             ?? $this->validateDoi($object, $context);
         if ($preflightError) {
@@ -238,6 +247,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         $zenodoApiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
         $recordsApiUrl = $zenodoApiUrl . self::ZENODO_API_OPERATION;
 
+        $this->forgetSandboxRecord($object, $context);
         $existingZenodoId = $object->getData($this->getIdSettingName()) ?: null;
         $isPublished = false;
         if ($existingZenodoId) {
@@ -267,13 +277,16 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return $zenodoId;
         }
 
-        // Set Zenodo ID, including for all other sibling minor publications.
+        // Set Zenodo ID and its server, including for all other sibling minor publications.
+        $sandbox = $this->isTestMode($context) ? '1' : '0';
         $object->setData($this->getIdSettingName(), $zenodoId);
+        $object->setData($this->getSandboxSettingName(), $sandbox);
         $this->updateObject($object);
         if ($isPublication) {
             // Set Zenodo ID for all other sibling minor publications.
             $editParams = [
                 $this->getIdSettingName() => $zenodoId,
+                $this->getSandboxSettingName() => $sandbox,
             ];
             Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$object->getData('submissionId')])
@@ -538,6 +551,69 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     }
 
     /**
+     * Get the setting name recording whether an object's Zenodo record is on the sandbox.
+     */
+    public function getSandboxSettingName(): string
+    {
+        return $this->getPluginSettingsPrefix() . '::sandbox';
+    }
+
+    /**
+     * Whether an object's Zenodo record is on the sandbox. A record deposited before
+     * the server was stored is taken to be on the server currently in use.
+     */
+    public function isSandboxRecord(Submission|Publication $object, Context $context): bool
+    {
+        $sandbox = $object->getData($this->getSandboxSettingName());
+        return $sandbox === null ? $this->isTestMode($context) : (bool) $sandbox;
+    }
+
+    /**
+     * A record on Zenodo is never replaced by a sandbox deposit, so in test mode an object
+     * with a Zenodo record is refused.
+     *
+     * @return ?array [message key, Zenodo ID] or null when the object can be deposited
+     */
+    public function validateRecordServer(Submission|Publication $object, Context $context): ?array
+    {
+        $zenodoId = $object->getData($this->getIdSettingName());
+
+        return $zenodoId && $this->isTestMode($context) && !$this->isSandboxRecord($object, $context)
+            ? ['plugins.importexport.zenodo.register.error.productionRecord', $zenodoId]
+            : null;
+    }
+
+    /**
+     * Forget a sandbox record once deposits go to Zenodo, so the object is deposited as a
+     * new record there rather than updating an unrelated record with the same ID.
+     */
+    public function forgetSandboxRecord(Submission|Publication $object, Context $context): void
+    {
+        if (
+            $object->getData($this->getIdSettingName()) &&
+            !$this->isTestMode($context) &&
+            $this->isSandboxRecord($object, $context)
+        ) {
+            $this->removeZenodoId($object);
+        }
+    }
+
+    /**
+     * Get the web page of an object's Zenodo record, on the server it was deposited to.
+     * The upload page works for drafts as well as published records: it opens the record
+     * for its owner and redirects anyone else to the published record.
+     */
+    public function getRecordUrl(Submission|Publication $object, Context $context): ?string
+    {
+        $zenodoId = $object->getData($this->getIdSettingName());
+        if (!$zenodoId) {
+            return null;
+        }
+
+        return ($this->isSandboxRecord($object, $context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'uploads/' . rawurlencode($zenodoId);
+    }
+
+    /**
      * Get the community review request ID setting name.
      */
     public function getReviewRequestIdSettingName(): string
@@ -553,7 +629,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         return array_merge(parent::getObjectAdditionalSettings(), [
             $this->getIdSettingName(),
             $this->getReviewRequestIdSettingName(),
-            $this->getDepositStatusSettingName()
+            $this->getDepositStatusSettingName(),
+            $this->getSandboxSettingName(),
         ]);
     }
 
@@ -1396,11 +1473,13 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     {
         $object->setData($this->getIdSettingName(), null);
         $object->setData($this->getReviewRequestIdSettingName(), null);
+        $object->setData($this->getSandboxSettingName(), null);
         $this->updateObject($object);
         if ($object instanceof Publication) {
             $editParams = [
                 $this->getIdSettingName() => null,
                 $this->getReviewRequestIdSettingName() => null,
+                $this->getSandboxSettingName() => null,
             ];
             Repo::publication()->getCollector()
                 ->filterBySubmissionIds([$object->getData('submissionId')])

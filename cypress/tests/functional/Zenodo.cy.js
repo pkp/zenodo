@@ -43,6 +43,11 @@ describe('Zenodo plugin tests', function () {
 		// journal versions its DOIs).
 		cy.get('a[href="#exportSubmissions-tab"], a[href="#exportPublications-tab"]').should('exist');
 
+		// The export grid is the plugin's own, with the Zenodo record column.
+		cy.get('#submissionsListGridContainer, #publicationsListGridContainer')
+			.contains('th', 'Zenodo ID', {timeout: 20000})
+			.should('exist');
+
 		// Drive the export via cy.request and check the InvenioRDM record.
 		cy.getCsrfToken();
 		cy.get('@csrfToken').then((csrfToken) => {

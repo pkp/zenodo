@@ -179,6 +179,114 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame([VersionStage::VERSION_OF_RECORD], $this->createPlugin()->getExportableVersionStages());
     }
 
+    private function createSubmissionWithRecord(?string $sandbox): Submission
+    {
+        $submission = new Submission();
+        $submission->setData('zenodo::id', '123');
+        $submission->setData('zenodo::sandbox', $sandbox);
+        return $submission;
+    }
+
+    public function testAProductionRecordLinksToZenodo(): void
+    {
+        $this->assertSame(
+            'https://zenodo.org/uploads/123',
+            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord('0'), $this->createJournal())
+        );
+    }
+
+    public function testASandboxRecordLinksToTheSandbox(): void
+    {
+        $this->assertSame(
+            'https://sandbox.zenodo.org/uploads/123',
+            $this->createPlugin()->getRecordUrl($this->createSubmissionWithRecord('1'), $this->createJournal())
+        );
+    }
+
+    /**
+     * A record deposited before the server was stored is taken to be on the server in use.
+     */
+    public function testARecordWithoutAStoredServerLinksToTheServerInUse(): void
+    {
+        $this->assertSame(
+            'https://sandbox.zenodo.org/uploads/123',
+            $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord(null), $this->createJournal())
+        );
+    }
+
+    public function testAnObjectWithoutARecordHasNoRecordUrl(): void
+    {
+        $this->assertNull($this->createPlugin()->getRecordUrl(new Submission(), $this->createJournal()));
+    }
+
+    public static function sandboxRecordProvider(): array
+    {
+        return [
+            'sandbox record, Zenodo in use' => ['1', null, true],
+            'Zenodo record, sandbox in use' => ['0', '1', false],
+            'sandbox record, sandbox in use' => ['1', '1', false],
+            'Zenodo record, Zenodo in use' => ['0', null, false],
+            'no stored server' => [null, null, false],
+        ];
+    }
+
+    #[DataProvider('sandboxRecordProvider')]
+    public function testOnlyASandboxRecordIsForgottenOnceDepositsGoToZenodo(?string $sandbox, ?string $testMode, bool $forgotten): void
+    {
+        $submission = $this->createSubmissionWithRecord($sandbox);
+
+        $this->createPlugin(['testMode' => $testMode])->forgetSandboxRecord($submission, $this->createJournal());
+
+        $this->assertSame($forgotten ? null : '123', $submission->getData('zenodo::id'));
+    }
+
+    public static function recordServerProvider(): array
+    {
+        return [
+            'Zenodo record, sandbox in use' => ['0', '1', true],
+            'sandbox record, sandbox in use' => ['1', '1', false],
+            'no stored server, sandbox in use' => [null, '1', false],
+            'sandbox record, Zenodo in use' => ['1', null, false],
+            'Zenodo record, Zenodo in use' => ['0', null, false],
+        ];
+    }
+
+    #[DataProvider('recordServerProvider')]
+    public function testAZenodoRecordIsNotDepositedToTheSandbox(?string $sandbox, ?string $testMode, bool $refused): void
+    {
+        $result = $this->createPlugin(['testMode' => $testMode])
+            ->validateRecordServer($this->createSubmissionWithRecord($sandbox), $this->createJournal());
+
+        $this->assertSame($refused ? ['plugins.importexport.zenodo.register.error.productionRecord', '123'] : null, $result);
+    }
+
+    /**
+     * The refusal comes before the deposit is queued, so the record's status is kept.
+     */
+    public function testQueuingAZenodoRecordInTestModeIsRefusedWithoutChangingItsStatus(): void
+    {
+        Bus::fake();
+        $plugin = $this->createPlugin(['apiKey' => 'secret', 'testMode' => '1']);
+        $plugin->expects($this->never())->method('updateStatus');
+
+        $result = $plugin->queueDeposit($this->createSubmissionWithRecord('0'), $this->createJournal());
+
+        $this->assertSame('plugins.importexport.zenodo.register.error.productionRecord', $result[0][0]);
+        Bus::assertNothingDispatched();
+    }
+
+    public function testQueuingASandboxRecordInTestModeIsAllowed(): void
+    {
+        Bus::fake();
+        $plugin = $this->createPlugin(['apiKey' => 'secret', 'testMode' => '1']);
+        $submission = $this->createSubmissionWithRecord('1');
+        $submission->setId(1);
+
+        $this->assertTrue($plugin->queueDeposit($submission, $this->createJournal()));
+
+        Bus::assertDispatched(ZenodoDeposit::class, 1);
+    }
+
     public function testTheZenodoIdIsStoredUnderThePluginPrefix(): void
     {
         $this->assertSame('zenodo::id', $this->createPlugin()->getIdSettingName());
@@ -927,15 +1035,17 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame('plugins.importexport.zenodo.api.error.publishCheckError', $result[0][0]);
     }
 
-    public function testForgettingARecordClearsItsIdAndRequest(): void
+    public function testForgettingARecordClearsItsIdRequestAndServer(): void
     {
         $submission = $this->createSubmissionWithZenodoId('123');
         $submission->setData('zenodo::reviewRequestId', 'r1');
+        $submission->setData('zenodo::sandbox', '1');
 
         $this->createPlugin()->removeZenodoId($submission);
 
         $this->assertNull($submission->getData('zenodo::id'));
         $this->assertNull($submission->getData('zenodo::reviewRequestId'));
+        $this->assertNull($submission->getData('zenodo::sandbox'));
     }
 
     //

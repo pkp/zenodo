@@ -1,0 +1,60 @@
+<?php
+
+/**
+ * @file plugins/generic/zenodo/controllers/grid/ZenodoPublicationsListGridCellProvider.php
+ *
+ * Copyright (c) 2026 Simon Fraser University
+ * Copyright (c) 2026 John Willinsky
+ * Distributed under the GNU GPL v3. For full terms see the file LICENSE.
+ *
+ * @class ZenodoPublicationsListGridCellProvider
+ *
+ * @brief Cell provider for the Zenodo export grid of published publications, linking each row to its Zenodo record.
+ */
+
+namespace APP\plugins\generic\zenodo\controllers\grid;
+
+use APP\controllers\grid\publications\ExportPublishedPublicationsListGridCellProvider;
+use PKP\controllers\grid\GridHandler;
+use PKP\linkAction\LinkAction;
+use PKP\linkAction\request\OpenWindowAction;
+
+class ZenodoPublicationsListGridCellProvider extends ExportPublishedPublicationsListGridCellProvider
+{
+    /**
+     * @copydoc ExportPublishedPublicationsListGridCellProvider::getCellActions()
+     */
+    public function getCellActions($request, $row, $column, $position = GridHandler::GRID_ACTION_POSITION_DEFAULT)
+    {
+        if ($column->getId() !== 'zenodoId') {
+            return parent::getCellActions($request, $row, $column, $position);
+        }
+
+        $object = $row->getData();
+        $context = $request->getContext();
+        $recordUrl = $this->_plugin->getRecordUrl($object, $context);
+        if (!$recordUrl) {
+            return [];
+        }
+
+        $zenodoId = $object->getData($this->_plugin->getIdSettingName());
+        return [new LinkAction(
+            'zenodoRecord',
+            new OpenWindowAction($recordUrl, '_blank'),
+            $this->_plugin->isSandboxRecord($object, $context)
+                ? __('plugins.importexport.zenodo.grid.sandboxRecordId', ['id' => $zenodoId])
+                : $zenodoId
+        )];
+    }
+
+    /**
+     * @copydoc ExportPublishedPublicationsListGridCellProvider::getTemplateVarsFromRowColumn()
+     */
+    public function getTemplateVarsFromRowColumn($row, $column)
+    {
+        // The record id is the link text of the cell action.
+        return $column->getId() === 'zenodoId'
+            ? ['label' => '']
+            : parent::getTemplateVarsFromRowColumn($row, $column);
+    }
+}

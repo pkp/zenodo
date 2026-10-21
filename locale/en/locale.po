@@ -28,6 +28,12 @@ msgstr "The record can not be deposited because Zenodo requires the following me
 msgid "plugins.importexport.zenodo.export.failure.noPdfGalley"
 msgstr "The record can not be deposited because no article PDF was found. Zenodo records must include the full text: a PDF galley in the article's language whose file type is the article text, not a supplementary or dependent file."
 
+msgid "plugins.importexport.zenodo.grid.recordId"
+msgstr "Zenodo ID"
+
+msgid "plugins.importexport.zenodo.grid.sandboxRecordId"
+msgstr "{$id} (Sandbox)"
+
 msgid "plugins.importexport.zenodo.export.createAccount"
 msgstr "Create a Zenodo account to get started."
 
@@ -93,6 +99,9 @@ msgstr "Zenodo automatic registration task"
 
 msgid "plugins.importexport.zenodo.register.error.noApiKey"
 msgstr "No Zenodo API Key was found. Please set the API key and try again."
+
+msgid "plugins.importexport.zenodo.register.error.productionRecord"
+msgstr "The record is already deposited to Zenodo (ID {$param}), so it is not deposited to the sandbox. Turn off test mode to update it."
 
 msgid "plugins.importexport.zenodo.register.error.mdsError"
 msgstr "Deposit was not successful! The Zenodo API returned an error: '{$param}'."

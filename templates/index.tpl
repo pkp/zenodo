@@ -74,7 +74,7 @@
 						{csrf}
 						<input type="hidden" name="tab" value="exportPublications-tab" />
 						{fbvFormArea id="publicationsXmlForm"}
-						{capture assign=publicationsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.publications.ExportPublishedPublicationsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
+						{capture assign=publicationsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="plugins.generic.zenodo.controllers.grid.ZenodoPublicationsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
 						{load_url_in_div id="publicationsListGridContainer" url=$publicationsListGridUrl}
 						{if !empty($actionNames)}
 							{fbvFormSection}
@@ -102,7 +102,7 @@
 						{csrf}
 						<input type="hidden" name="tab" value="exportSubmissions-tab" />
 						{fbvFormArea id="submissionsXmlForm"}
-							{capture assign=submissionsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="grid.submissions.ExportPublishedSubmissionsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
+							{capture assign=submissionsListGridUrl}{url router=PKP\core\PKPApplication::ROUTE_COMPONENT component="plugins.generic.zenodo.controllers.grid.ZenodoSubmissionsListGridHandler" op="fetchGrid" plugin="ZenodoExportPlugin" category="importexport" escape=false}{/capture}
 							{load_url_in_div id="submissionsListGridContainer" url=$submissionsListGridUrl}
 							{if !empty($actionNames)}
 								{fbvFormSection}
