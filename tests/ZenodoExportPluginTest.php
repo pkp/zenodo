@@ -190,7 +190,7 @@ class ZenodoExportPluginTest extends PKPTestCase
     public function testAProductionRecordLinksToZenodo(): void
     {
         $this->assertSame(
-            'https://zenodo.org/records/123',
+            'https://zenodo.org/uploads/123',
             $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord('0'), $this->createJournal())
         );
     }
@@ -198,7 +198,7 @@ class ZenodoExportPluginTest extends PKPTestCase
     public function testASandboxRecordLinksToTheSandbox(): void
     {
         $this->assertSame(
-            'https://sandbox.zenodo.org/records/123',
+            'https://sandbox.zenodo.org/uploads/123',
             $this->createPlugin()->getRecordUrl($this->createSubmissionWithRecord('1'), $this->createJournal())
         );
     }
@@ -209,7 +209,7 @@ class ZenodoExportPluginTest extends PKPTestCase
     public function testARecordWithoutAStoredServerLinksToTheServerInUse(): void
     {
         $this->assertSame(
-            'https://sandbox.zenodo.org/records/123',
+            'https://sandbox.zenodo.org/uploads/123',
             $this->createPlugin(['testMode' => '1'])->getRecordUrl($this->createSubmissionWithRecord(null), $this->createJournal())
         );
     }

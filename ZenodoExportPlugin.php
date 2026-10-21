@@ -600,6 +600,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
     /**
      * Get the web page of an object's Zenodo record, on the server it was deposited to.
+     * The upload page works for drafts as well as published records: it opens the record
+     * for its owner and redirects anyone else to the published record.
      */
     public function getRecordUrl(Submission|Publication $object, Context $context): ?string
     {
@@ -608,7 +610,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return null;
         }
 
-        return ($this->isSandboxRecord($object, $context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'records/' . rawurlencode($zenodoId);
+        return ($this->isSandboxRecord($object, $context) ? self::ZENODO_URL_DEV : self::ZENODO_URL) . 'uploads/' . rawurlencode($zenodoId);
     }
 
     /**
