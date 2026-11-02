@@ -260,6 +260,29 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame($refused ? ['plugins.importexport.zenodo.register.error.productionRecord', '123'] : null, $result);
     }
 
+    public static function storedIdProvider(): array
+    {
+        return [
+            'record ID' => ['zenodo::id', '614398', false],
+            'request ID' => ['zenodo::reviewRequestId', '6f0b3a1e-5c2d-4e8f-9a7b-1c2d3e4f5a6b', false],
+            'record ID with a path' => ['zenodo::id', '123/draft', true],
+            'record ID with a query' => ['zenodo::id', '123?x=1', true],
+            'request ID with dot segments' => ['zenodo::reviewRequestId', '../records/123', true],
+        ];
+    }
+
+    #[DataProvider('storedIdProvider')]
+    public function testAStoredIdThatIsNotInZenodosFormIsRefused(string $settingName, string $id, bool $refused): void
+    {
+        $submission = new Submission();
+        $submission->setData($settingName, $id);
+
+        $this->assertSame(
+            $refused ? ['plugins.importexport.zenodo.register.error.invalidId', $id] : null,
+            $this->createPlugin()->validateStoredIds($submission)
+        );
+    }
+
     /**
      * The refusal comes before the deposit is queued, so the record's status is kept.
      */
