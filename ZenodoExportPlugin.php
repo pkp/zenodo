@@ -233,7 +233,8 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             return [['plugins.importexport.zenodo.register.error.noApiKey']];
         }
 
-        $preflightError = $this->validateRecordServer($object, $context)
+        $preflightError = $this->validateStoredIds($object)
+            ?? $this->validateRecordServer($object, $context)
             ?? $this->validateRequiredMetadata($object)
             ?? $this->validateGalleys($object)
             ?? $this->validateDoi($object, $context);
@@ -581,6 +582,24 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
         return $zenodoId && $this->isTestMode($context) && !$this->isSandboxRecord($object, $context)
             ? ['plugins.importexport.zenodo.register.error.productionRecord', $zenodoId]
             : null;
+    }
+
+    /**
+     * The stored record and review request IDs are used in API paths, so one that is
+     * not in Zenodo's form is refused.
+     *
+     * @return ?array [message key, ID] or null when the stored IDs can be used
+     */
+    public function validateStoredIds(Submission|Publication $object): ?array
+    {
+        foreach ([$this->getIdSettingName(), $this->getReviewRequestIdSettingName()] as $settingName) {
+            $id = (string) $object->getData($settingName);
+            if ($id !== '' && !preg_match('/^[A-Za-z0-9-]+$/', $id)) {
+                return ['plugins.importexport.zenodo.register.error.invalidId', $id];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1057,7 +1076,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
     public function isValidAward(Context $context, string $funderRor, string $award): bool
     {
         $apiUrl = ($this->isTestMode($context) ? self::ZENODO_API_URL_DEV : self::ZENODO_API_URL);
-        $awardsUrl = $apiUrl . 'awards/' . $funderRor . '::' . $award;
+        $awardsUrl = $apiUrl . 'awards/' . rawurlencode($funderRor) . '::' . rawurlencode($award);
         $httpClient = Application::get()->getHttpClient();
 
         try {

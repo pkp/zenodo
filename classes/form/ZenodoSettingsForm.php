@@ -170,7 +170,7 @@ class ZenodoSettingsForm extends PubObjectsExportSettingsForm
         $url = $plugin->isTestMode($context)
             ? ZenodoExportPlugin::ZENODO_API_URL_DEV
             : ZenodoExportPlugin::ZENODO_API_URL;
-        $communityUrl = $url . 'communities/' . $communityName;
+        $communityUrl = $url . 'communities/' . rawurlencode($communityName);
 
         try {
             $response = $httpClient->request(
