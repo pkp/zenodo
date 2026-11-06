@@ -26,6 +26,7 @@ use Exception;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\Psr7;
 use PKP\config\Config;
 use PKP\context\Context;
@@ -718,7 +719,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     'json' => json_decode($json),
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             // A draft removed in Zenodo answers 404, or 410 once its identifier is marked deleted.
             if ($allowNotFound && in_array($e->getCode(), [self::ZENODO_API_NOT_FOUND, self::ZENODO_API_GONE])) {
                 return null;
@@ -759,7 +760,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     'headers' => $headers,
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.register.error.draftPublishError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -818,7 +819,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                         ]
                     ],
                 );
-            } catch (RequestException $e) {
+            } catch (TransferException $e) {
                 $returnMessage = $this->getExceptionMessage($e);
                 $errorMessage = __('plugins.importexport.zenodo.api.error.fileError', ['param' => $returnMessage]);
                 $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -841,7 +842,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                         'body' => Psr7\Utils::tryFopen($filePath, 'r')
                     ],
                 );
-            } catch (RequestException $e) {
+            } catch (TransferException $e) {
                 $returnMessage = $this->getExceptionMessage($e);
                 $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $returnMessage);
                 return [['plugins.importexport.zenodo.api.error.fileError', $e->getMessage()]];
@@ -861,7 +862,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                         'headers' => $commitHeaders,
                     ],
                 );
-            } catch (RequestException $e) {
+            } catch (TransferException $e) {
                 $returnMessage = $this->getExceptionMessage($e);
                 $errorMessage = __('plugins.importexport.zenodo.api.error.fileError', ['param' => $returnMessage]);
                 $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1057,7 +1058,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             foreach ($entries as $entry) {
                 $httpClient->request('DELETE', $filesUrl . '/' . rawurlencode($entry['key']), ['headers' => $headers]);
             }
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.api.error.fileDeleteError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1127,7 +1128,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     'headers' => $publishHeaders,
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.api.error.publishError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1202,7 +1203,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ]
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             // "An open review cannot be deleted.": the draft already has an open request.
             if ($e->getCode() === 400 && stripos($returnMessage, 'open review') !== false) {
@@ -1251,7 +1252,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             );
             $body = json_decode($submitReviewResponse->getBody(), true);
             $requestId = $body['id'];
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.api.error.submitReviewError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1298,7 +1299,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
             );
             $body = json_decode($submitCommunityResponse->getBody(), true);
             $requestId = $body['processed'][0]['request_id'] ?? null;
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             if ($e->getCode() === 400) {
                 // "There is already an open inclusion request for this community."
@@ -1339,7 +1340,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
 
         try {
             $response = $httpClient->request('GET', $url . '/' . $zenodoId, ['headers' => $headers]);
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.api.error.communityCheckError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1384,7 +1385,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ]
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             $errorMessage = __('plugins.importexport.zenodo.api.error.acceptReviewError', ['param' => $returnMessage]);
             $this->updateStatus($object, PubObjectsExportPlugin::EXPORT_STATUS_ERROR, $errorMessage);
@@ -1478,7 +1479,7 @@ class ZenodoExportPlugin extends PubObjectsExportPlugin implements HasTaskSchedu
                     ]
                 ]
             );
-        } catch (RequestException $e) {
+        } catch (TransferException $e) {
             $returnMessage = $this->getExceptionMessage($e);
             return [['plugins.importexport.zenodo.api.error.reviewCancelError', $returnMessage]];
         }

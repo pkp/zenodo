@@ -852,6 +852,18 @@ class ZenodoExportPluginTest extends PKPTestCase
         $this->assertSame('plugins.importexport.zenodo.api.error.fileDeleteError', $result[0][0]);
     }
 
+    public function testAFileDeletionThatCannotConnectIsRecordedAsATransientError(): void
+    {
+        $this->mockHttp([new ConnectException('Could not resolve host', new Request('GET', self::RECORDS_URL . '/123/draft/files'))]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->once())->method('updateStatus')->with($this->anything(), PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+
+        $result = $this->invoke($plugin, 'deleteDraftFiles', [$this->createSubmissionWithZenodoId('123'), self::RECORDS_URL, 'key', '123']);
+
+        $this->assertSame('plugins.importexport.zenodo.api.error.fileDeleteError', $result[0][0]);
+        $this->assertTrue($plugin->wasLastFailureTransient());
+    }
+
     //
     // Queued deposits
     //
@@ -952,6 +964,18 @@ class ZenodoExportPluginTest extends PKPTestCase
         $result = $plugin->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key');
 
         $this->assertSame('plugins.importexport.zenodo.api.error.communityCheckError', $result[0][0]);
+    }
+
+    public function testACommunityCheckThatCannotConnectIsATransientError(): void
+    {
+        $this->mockHttp([new ConnectException('Connection refused', new Request('GET', self::RECORDS_URL . '/123'))]);
+        $plugin = $this->createPlugin();
+        $plugin->expects($this->once())->method('updateStatus')->with($this->anything(), PubObjectsExportPlugin::EXPORT_STATUS_ERROR);
+
+        $result = $plugin->isRecordInCommunity($this->createSubmissionWithZenodoId('123'), '123', 'c2', self::RECORDS_URL, 'key');
+
+        $this->assertSame('plugins.importexport.zenodo.api.error.communityCheckError', $result[0][0]);
+        $this->assertTrue($plugin->wasLastFailureTransient());
     }
 
     public function testSubmittingAPublishedRecordReturnsTheInclusionRequestId(): void
