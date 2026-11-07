@@ -888,10 +888,10 @@ class ZenodoJsonFilter extends PKPImportExportFilter
      */
     private function normalizeRorId(?string $ror): ?string
     {
-        if (!$ror || !preg_match('#^(?:https?://)?(?:ror\.org/)?(0\w{6}\d{2})$#i', trim($ror), $match)) {
+        if (!$ror || !preg_match('#^(?:https?://)?(?:ror\.org/)?(0[a-hj-km-np-tv-z0-9]{6}\d{2})$#', strtolower(trim($ror)), $match)) {
             return null;
         }
-        return strtolower($match[1]);
+        return $match[1];
     }
 
     /**
